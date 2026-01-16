@@ -10,6 +10,10 @@ def create_visit(db: Session, visit_in: VisitCreate, vendor_id: int, selfie_url:
         check_in_latitude=visit_in.check_in_latitude,
         check_in_longitude=visit_in.check_in_longitude,
         check_in_selfie_url=selfie_url,
+        area=visit_in.area,
+        pincode=visit_in.pincode,
+        city=visit_in.city,
+        state=visit_in.state,
         purpose=visit_in.purpose
     )
     db.add(db_visit)

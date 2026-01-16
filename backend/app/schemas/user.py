@@ -8,9 +8,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
     full_name: str
-    phone_number: str # used for vendor profile creation
-    company_name: str # used for vendor profile creation
-    office_address: str # used for vendor profile creation
+    role: Optional[str] = "visitor"
 
 class UserLogin(BaseModel):
     email: EmailStr

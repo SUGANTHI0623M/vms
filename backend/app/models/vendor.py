@@ -17,6 +17,11 @@ class Vendor(Base):
     company_name = Column(String)
     office_address = Column(Text)
     verification_status = Column(Enum(VerificationStatus), default=VerificationStatus.PENDING)
+    vendor_uid = Column(String, unique=True, index=True, nullable=True)
+    
+    # Personal details
+    dob = Column(String, nullable=True)
+    gender = Column(String, nullable=True)
     
     user = relationship("User", backref="vendor_profile")
     documents = relationship("Document", back_populates="vendor")

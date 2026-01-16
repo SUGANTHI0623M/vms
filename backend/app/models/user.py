@@ -1,6 +1,12 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from sqlalchemy.sql import func
 from app.core.database import Base
+import enum
+
+class UserRole(str, enum.Enum):
+    ADMIN = "admin"
+    VENDOR = "vendor"
+    VISITOR = "visitor"
 
 class User(Base):
     __tablename__ = "users"
@@ -11,5 +17,5 @@ class User(Base):
     full_name = Column(String)
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
-    role = Column(String, default="vendor") # 'vendor', 'admin'
+    role = Column(String, default="vendor") # 'admin', 'vendor'
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -8,7 +8,7 @@ class Document(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     vendor_id = Column(Integer, ForeignKey("vendors.id"), nullable=False)
-    document_type = Column(String) # 'id_proof', 'business_doc'
+    document_type = Column(String) 
     file_url = Column(String, nullable=False)
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
     

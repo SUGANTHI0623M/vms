@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.core import database
@@ -7,16 +7,19 @@ from app.services import visit_service, vendor_service
 from app.schemas.visit import VisitResponse, VisitCreate, VisitCheckOut
 from app.models.user import User
 from app.models.vendor import VerificationStatus
-from app.utils.file_upload import save_upload_file
-import json
+from app.utils.cloudinary_util import upload_image_to_cloudinary
 
 router = APIRouter()
 
 @router.post("/check-in", response_model=VisitResponse)
 def check_in(
-    agent_id: int = Form(...),
+    agent_id: Optional[int] = Form(None),
     check_in_latitude: float = Form(...),
     check_in_longitude: float = Form(...),
+    area: Optional[str] = Form(None),
+    pincode: Optional[str] = Form(None),
+    city: Optional[str] = Form(None),
+    state: Optional[str] = Form(None),
     purpose: Optional[str] = Form(None),
     selfie: UploadFile = File(...),
     current_user: User = Depends(auth.get_current_active_user),
@@ -30,7 +33,6 @@ def check_in(
         raise HTTPException(status_code=403, detail="Only verified vendors can check in")
 
     # Save selfie to cloud
-    from app.utils.cloudinary_util import upload_image_to_cloudinary
     selfie_url = upload_image_to_cloudinary(selfie.file, folder="selfies")
     if not selfie_url:
         raise HTTPException(status_code=500, detail="Failed to upload selfie to cloud")
@@ -39,6 +41,10 @@ def check_in(
         agent_id=agent_id,
         check_in_latitude=check_in_latitude,
         check_in_longitude=check_in_longitude,
+        area=area,
+        pincode=pincode,
+        city=city,
+        state=state,
         purpose=purpose
     )
     
@@ -61,7 +67,6 @@ def check_out(
     if visit.vendor_id != vendor.id:
         raise HTTPException(status_code=403, detail="Not authorized to update this visit")
 
-    from app.utils.cloudinary_util import upload_image_to_cloudinary
     selfie_url = upload_image_to_cloudinary(selfie.file, folder="selfies")
     if not selfie_url:
         raise HTTPException(status_code=500, detail="Failed to upload selfie to cloud")
@@ -75,10 +80,10 @@ def check_out(
 
 @router.get("/", response_model=List[VisitResponse])
 def read_visits(
-    skip: int = 0, 
-    limit: int = 100, 
     current_user: User = Depends(auth.get_current_active_user),
     db: Session = Depends(database.get_db)
 ):
-    # Requirement: All vendors can view who visited which office
-    return visit_service.get_all_visits(db)
+    vendor = vendor_service.get_vendor_by_user_id(db, current_user.id)
+    if not vendor:
+        raise HTTPException(status_code=400, detail="Vendor profile not found")
+    return [v for v in visit_service.get_all_visits(db) if v.vendor_id == vendor.id]

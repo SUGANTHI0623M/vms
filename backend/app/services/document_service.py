@@ -1,6 +1,5 @@
 from sqlalchemy.orm import Session
 from app.models.document import Document
-from app.schemas.document import DocumentCreate
 
 def create_document(db: Session, vendor_id: int, document_type: str, file_url: str):
     db_document = Document(
@@ -13,5 +12,5 @@ def create_document(db: Session, vendor_id: int, document_type: str, file_url: s
     db.refresh(db_document)
     return db_document
 
-def get_vendor_documents(db: Session, vendor_id: int):
+def get_profile_documents(db: Session, vendor_id: int):
     return db.query(Document).filter(Document.vendor_id == vendor_id).all()

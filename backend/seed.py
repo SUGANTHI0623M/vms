@@ -3,78 +3,119 @@ import os
 from sqlalchemy.orm import Session
 
 # Add the parent directory to sys.path to resolve imports
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '.'))
 
-from app.core.database import SessionLocal
-from app.services.auth_service import create_user
-from app.schemas.user import UserCreate
-from app.models.user import User
-from app.models.vendor import Vendor, VerificationStatus
-from app.models.visit import Visit
-from app.models.agent import Agent
-from app.models.document import Document
+from app.core.database import SessionLocal, engine, Base
+from app.models.user import User, UserRole
+from app.models.soc_profile import SOCProfile
+from app.models.vendor import Vendor
+# from app.models.organization import Organization
 from app.core import security
+from app.utils.soc import generate_soc_id
 
-def seed_users():
+def seed_data():
+    # Create tables
+    Base.metadata.create_all(bind=engine)
+    
     db: Session = SessionLocal()
     
-    users = [
-        {
-            "email": "sugu@gmail.com",
-            "password": "sugu#123",
-            "full_name": "Sugu Vendor",
-            "phone_number": "1234567890",
-            "company_name": "Sugu Tech",
-            "office_address": "123 Tech Park, Chennai",
-            "status": VerificationStatus.VERIFIED
-        },
-        {
-            "email": "sugu@gmai.com",
-            "password": "sugu#123",
-            "full_name": "Sugu Vendor",
-            "phone_number": "1234567890",
-            "company_name": "Sugu Tech",
-            "office_address": "123 Tech Park, Chennai",
-            "status": VerificationStatus.VERIFIED
-        },
-        {
-            "email": "hema@gmail.com",
-            "password": "hema#123",
-            "full_name": "Hema Vendor",
-            "phone_number": "0987654321",
-            "company_name": "Hema Solutions",
-            "office_address": "456 IT Hub, Bangalore",
-            "status": VerificationStatus.PENDING
-        }
-    ]
+    # 1. Create Organization - SKIPPED
+    # org = db.query(Organization).filter(Organization.name == "Main Office").first()
+    # if not org:
+    #     org = Organization(
+    #         name="Main Office",
+    #         address="123 Corporate Blvd",
+    #         contact_email="admin@mainoffice.com",
+    #         subscription_plan="free"
+    #     )
+    #     db.add(org)
+    #     db.commit()
+    #     db.refresh(org)
+    #     print("Created Organization: Main Office")
 
-    for user_data in users:
-        email = user_data["email"].lower().strip()
-        # Check if user exists
-        existing_user = db.query(User).filter(User.email == email).first()
-        if existing_user:
-            print(f"User {user_data['email']} already exists. Updating password and status...")
-            existing_user.hashed_password = security.get_password_hash(user_data["password"])
-            existing_user.vendor_profile.verification_status = user_data["status"]
-            db.commit()
-            continue
-
-        user_in = UserCreate(
-            email=email,
-            password=user_data["password"],
-            full_name=user_data["full_name"],
-            phone_number=user_data["phone_number"],
-            company_name=user_data["company_name"],
-            office_address=user_data["office_address"]
+    # 2. Create Security User
+    security_user = db.query(User).filter(User.email == "security@vms.com").first()
+    if not security_user:
+        security_user = User(
+            email="security@vms.com",
+            hashed_password=security.get_password_hash("security123"),
+            full_name="Guard One",
+            role=UserRole.SECURITY
         )
-        
-        created_user = create_user(db, user_in)
-        # Manually set status for demo
-        created_user.vendor_profile.verification_status = user_data["status"]
+        db.add(security_user)
         db.commit()
-        print(f"Created user {email} with status {user_data['status']}")
+        print("Created Security User: security@vms.com")
+
+    # 3. Create Client User (The one who approves)
+    client_user = db.query(User).filter(User.email == "manager@vms.com").first()
+    if not client_user:
+        client_user = User(
+            email="manager@vms.com",
+            hashed_password=security.get_password_hash("manager123"),
+            full_name="Office Manager",
+            role=UserRole.CLIENT
+        )
+        db.add(client_user)
+        db.commit()
+        print("Created Client User: manager@vms.com")
+
+    # 4. Create a Service Provider Technician
+    tech_user = db.query(User).filter(User.email == "tech@vms.com").first()
+    if not tech_user:
+        tech_user = User(
+            email="tech@vms.com",
+            hashed_password=security.get_password_hash("tech123"),
+            full_name="John Technician",
+            role=UserRole.VISITOR
+        )
+        db.add(tech_user)
+        db.commit()
+        db.refresh(tech_user)
+        
+        soc_profile = SOCProfile(
+            user_id=tech_user.id,
+            soc_id=generate_soc_id(),
+            phone_number="9876543210",
+            company_name="AC Repair Co",
+            role_type="Technician",
+            service_category="Maintenance",
+            bluetooth_id="BT-001",
+            device_id="DEV-001",
+            is_verified=True
+        )
+        db.add(soc_profile)
+        db.commit()
+        print(f"Created Technician Profile with SOC ID: {soc_profile.soc_id}")
+
+    # 5. Create Sugu User (Vendor)
+    sugu_user = db.query(User).filter(User.email == "sugu@gmail.com").first()
+    if not sugu_user:
+        sugu_user = User(
+            email="sugu@gmail.com",
+            hashed_password=security.get_password_hash("password123"), # Default password
+            full_name="Sugu Vendor",
+            role=UserRole.VENDOR
+        )
+        db.add(sugu_user)
+        db.commit()
+        db.refresh(sugu_user)
+        print("Created Sugu User: sugu@gmail.com")
+
+    # Ensure Sugu has a vendor profile
+    if sugu_user:
+        sugu_vendor = db.query(Vendor).filter(Vendor.user_id == sugu_user.id).first()
+        if not sugu_vendor:
+            sugu_vendor = Vendor(
+                user_id=sugu_user.id,
+                phone_number="",
+                company_name="",
+                office_address=""
+            )
+            db.add(sugu_vendor)
+            db.commit()
+            print("Created Sugu Vendor Profile")
 
     db.close()
 
 if __name__ == "__main__":
-    seed_users()
+    seed_data()
