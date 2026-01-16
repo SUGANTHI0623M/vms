@@ -33,22 +33,33 @@ def check_in(
         raise HTTPException(status_code=403, detail="Only verified vendors can check in")
 
     # Save selfie to cloud
-    selfie_url = upload_image_to_cloudinary(selfie.file, folder="selfies")
-    if not selfie_url:
-        raise HTTPException(status_code=500, detail="Failed to upload selfie to cloud")
-    
-    visit_in = VisitCreate(
-        agent_id=agent_id,
-        check_in_latitude=check_in_latitude,
-        check_in_longitude=check_in_longitude,
-        area=area,
-        pincode=pincode,
-        city=city,
-        state=state,
-        purpose=purpose
-    )
-    
-    return visit_service.create_visit(db, visit_in, vendor.id, selfie_url)
+    try:
+        print(f"DEBUG: Processing Check-in for user {current_user.id}")
+        selfie_url = upload_image_to_cloudinary(selfie.file, folder="selfies")
+        if not selfie_url:
+            print("ERROR: Selfie upload returned None")
+            raise HTTPException(status_code=500, detail="Failed to upload selfie to cloud")
+        
+        print(f"DEBUG: Selfie uploaded to {selfie_url}")
+
+        visit_in = VisitCreate(
+            agent_id=agent_id,
+            check_in_latitude=check_in_latitude,
+            check_in_longitude=check_in_longitude,
+            area=area,
+            pincode=pincode,
+            city=city,
+            state=state,
+            purpose=purpose
+        )
+        
+        return visit_service.create_visit(db, visit_in, vendor.id, selfie_url)
+    except Exception as e:
+        print(f"CRITICAL ERROR in check_in: {str(e)}")
+        # Print stack trace
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @router.post("/{visit_id}/check-out", response_model=VisitResponse)
 def check_out(

@@ -4,12 +4,16 @@ import 'core/theme/app_theme.dart';
 import 'features/auth/login_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'services/auth_service.dart';
+import 'services/location_service.dart';
 
 void main() {
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
+        ChangeNotifierProvider<LocationService>(
+          create: (_) => LocationService()..fetchLocation(),
+        ),
       ],
       child: const VendorApp(),
     ),

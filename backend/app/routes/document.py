@@ -16,15 +16,21 @@ def upload_document(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(database.get_db)
 ):
+    print(f"DEBUG: Processing upload. Type: {document_type}, File: {file.filename}, User: {current_user.id}")
     vendor = vendor_service.get_vendor_by_user_id(db, current_user.id)
     if not vendor:
+        print(f"DEBUG: Vendor not found for user {current_user.id}")
         raise HTTPException(status_code=400, detail="Vendor Profile required")
         
     from app.utils.cloudinary_util import upload_image_to_cloudinary
+    print("DEBUG: Calling Cloudinary utility...")
     file_url = upload_image_to_cloudinary(file.file, folder="documents")
+    
     if not file_url:
+        print("DEBUG: Cloudinary returned None")
         raise HTTPException(status_code=500, detail="Failed to upload document to cloud")
         
+    print(f"DEBUG: Saving document record to DB. Vendor ID: {vendor.id}")
     return document_service.create_document(db, vendor.id, document_type, file_url)
 
 @router.get("/", response_model=List[DocumentResponse])

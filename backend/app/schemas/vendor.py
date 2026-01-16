@@ -17,6 +17,9 @@ class VendorResponse(VendorBase):
     user_id: int
     verification_status: str
     vendor_uid: Optional[str] = None
+    email: Optional[str] = None
+    full_name: Optional[str] = None
     
     class Config:
         from_attributes = True
+

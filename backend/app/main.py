@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.core import config, database
 from app import models
@@ -16,6 +16,13 @@ app = FastAPI(
     docs_url=f"{config.settings.API_V1_STR}/docs",
     redoc_url=f"{config.settings.API_V1_STR}/redoc",
 )
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    print(f"INCOMING REQUEST: {request.method} {request.url}")
+    response = await call_next(request)
+    print(f"RESPONSE STATUS: {response.status_code}")
+    return response
 
 # Set all CORS enabled origins
 app.add_middleware(
