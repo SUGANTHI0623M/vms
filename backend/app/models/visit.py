@@ -7,7 +7,7 @@ class Visit(Base):
     __tablename__ = "visits"
 
     id = Column(Integer, primary_key=True, index=True)
-    vendor_id = Column(Integer, ForeignKey("vendors.id"), nullable=False)
+    vendor_id = Column(Integer, ForeignKey("vendors.id"), nullable=False, index=True)
     agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True) 
     
     check_in_time = Column(DateTime(timezone=True), server_default=func.now())

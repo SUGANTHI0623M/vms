@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from typing import List
 from app.core import database
 from app.schemas.vendor import VendorUpdate, VendorResponse
 from app.services import vendor_service
@@ -7,6 +8,26 @@ from app.dependencies import auth
 from app.models.user import User
 
 router = APIRouter()
+
+@router.get("/", response_model=List[VendorResponse])
+def get_all_vendors(
+    db: Session = Depends(database.get_db),
+    current_user: User = Depends(auth.get_current_active_user)
+):
+    vendors = vendor_service.get_all_vendors(db)
+    # Enrich each vendor with user details
+    for vendor in vendors:
+        if vendor.user:
+            vendor.email = vendor.user.email
+            vendor.full_name = vendor.user.full_name
+    return vendors
+
+@router.get("/companies", response_model=List[str])
+def get_verified_companies(
+    db: Session = Depends(database.get_db),
+    current_user: User = Depends(auth.get_current_active_user)
+):
+    return vendor_service.get_verified_companies(db)
 
 @router.get("/me", response_model=VendorResponse)
 def get_my_profile(

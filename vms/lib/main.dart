@@ -5,6 +5,7 @@ import 'features/auth/login_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'services/auth_service.dart';
 import 'services/location_service.dart';
+import 'features/splash/splash_screen.dart';
 
 void main() {
   runApp(
@@ -42,17 +43,29 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
+  bool _showSplash = true;
+
   @override
   void initState() {
     super.initState();
-    // Check for persisted token
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AuthService>().checkAuthStatus();
-    });
+    _initApp();
+  }
+
+  Future<void> _initApp() async {
+    // Artificial delay for splash screen
+    await Future.delayed(const Duration(seconds: 3));
+    if (mounted) {
+      await context.read<AuthService>().checkAuthStatus();
+      setState(() => _showSplash = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_showSplash) {
+      return const SplashScreen();
+    }
+
     return Consumer<AuthService>(
       builder: (context, auth, child) {
         if (auth.isAuthenticated) {

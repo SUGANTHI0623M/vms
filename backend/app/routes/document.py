@@ -10,7 +10,7 @@ from app.models.user import User
 router = APIRouter()
 
 @router.post("/upload", response_model=DocumentResponse)
-def upload_document(
+async def upload_document(
     document_type: str = Form(...),
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
@@ -23,15 +23,26 @@ def upload_document(
         raise HTTPException(status_code=400, detail="Vendor Profile required")
         
     from app.utils.cloudinary_util import upload_image_to_cloudinary
+    from fastapi.concurrency import run_in_threadpool
+    
     print("DEBUG: Calling Cloudinary utility...")
-    file_url = upload_image_to_cloudinary(file.file, folder="documents")
+    # Run in threadpool to avoid blocking
+    file_url = await run_in_threadpool(upload_image_to_cloudinary, file.file, "documents")
     
     if not file_url:
         print("DEBUG: Cloudinary returned None")
         raise HTTPException(status_code=500, detail="Failed to upload document to cloud")
         
     print(f"DEBUG: Saving document record to DB. Vendor ID: {vendor.id}")
-    return document_service.create_document(db, vendor.id, document_type, file_url)
+    doc = document_service.create_document(db, vendor.id, document_type, file_url)
+    
+    # If it's a logo, update vendor profile directly
+    if document_type == "LOGO":
+        vendor.logo_url = file_url
+        db.commit()
+        db.refresh(vendor)
+        
+    return doc
 
 @router.get("/", response_model=List[DocumentResponse])
 def read_documents(

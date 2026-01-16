@@ -37,3 +37,6 @@ def get_all_visits(db: Session):
 
 def get_visit_by_id(db: Session, visit_id: int):
     return db.query(Visit).filter(Visit.id == visit_id).first()
+
+def get_visits_by_vendor_id(db: Session, vendor_id: int):
+    return db.query(Visit).filter(Visit.vendor_id == vendor_id).all()

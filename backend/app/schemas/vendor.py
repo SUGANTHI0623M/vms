@@ -8,6 +8,10 @@ class VendorBase(BaseModel):
     office_address: Optional[str] = None
     dob: Optional[str] = None
     gender: Optional[str] = None
+    website: Optional[str] = None
+    gstin: Optional[str] = None
+    description: Optional[str] = None
+    logo_url: Optional[str] = None
 
 class VendorUpdate(VendorBase):
     pass
