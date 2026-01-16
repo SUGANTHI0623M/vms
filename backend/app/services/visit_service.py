@@ -1,0 +1,35 @@
+from sqlalchemy.orm import Session
+from app.models.visit import Visit
+from app.schemas.visit import VisitCreate, VisitCheckOut
+from datetime import datetime
+
+def create_visit(db: Session, visit_in: VisitCreate, vendor_id: int, selfie_url: str):
+    db_visit = Visit(
+        vendor_id=vendor_id,
+        agent_id=visit_in.agent_id,
+        check_in_latitude=visit_in.check_in_latitude,
+        check_in_longitude=visit_in.check_in_longitude,
+        check_in_selfie_url=selfie_url,
+        purpose=visit_in.purpose
+    )
+    db.add(db_visit)
+    db.commit()
+    db.refresh(db_visit)
+    return db_visit
+
+def update_visit_checkout(db: Session, visit_id: int, visit_out: VisitCheckOut, selfie_url: str):
+    db_visit = db.query(Visit).filter(Visit.id == visit_id).first()
+    if db_visit:
+        db_visit.check_out_latitude = visit_out.check_out_latitude
+        db_visit.check_out_longitude = visit_out.check_out_longitude
+        db_visit.check_out_selfie_url = selfie_url
+        db_visit.check_out_time = datetime.utcnow()
+        db.commit()
+        db.refresh(db_visit)
+    return db_visit
+
+def get_all_visits(db: Session):
+    return db.query(Visit).all()
+
+def get_visit_by_id(db: Session, visit_id: int):
+    return db.query(Visit).filter(Visit.id == visit_id).first()
