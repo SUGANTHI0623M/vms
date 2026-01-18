@@ -2,7 +2,7 @@ services:
   - type: web
     name: vms-backend
     env: python
-    rootDirectory: backend
+    rootDir: backend
     buildCommand: "chmod +x build.sh && ./build.sh"
     startCommand: "gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app"
     envVars:
