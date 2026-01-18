@@ -5,7 +5,7 @@ from app.core.database import SessionLocal
 from app.models.user import User
 
 db = SessionLocal()
-user = db.query(User).filter(User.email == 'sugu@gmail.com').first()
+user = db.query(User).filter(User.email == 'hema@gmail.com').first()
 if user:
     print(f"User found: {user.email}")
     print(f"Hash: {user.hashed_password[:20]}...")
@@ -13,8 +13,16 @@ if user:
     try:
         match = verify_password('sugu#123', user.hashed_password)
         print(f"Password match: {match}")
+        
+        print(f"Is active: {getattr(user, 'is_active', 'Attribute Missing')}")
+        
+        from app.core import security
+        token = security.create_access_token(data={"sub": user.email})
+        print(f"Token created: {token[:10]}...")
     except Exception as e:
-        print(f"Error during verification: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"Error: {e}")
 else:
     print("User not found")
 db.close()

@@ -10,5 +10,5 @@ passlib[bcrypt]
 alembic
 python-dotenv
 email-validator
-
+gunicorn
 cloudinary
