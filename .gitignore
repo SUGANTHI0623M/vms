@@ -11,6 +11,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!vms/lib/
 lib64/
 parts/
 sdist/
@@ -57,3 +58,5 @@ venv.bak/
 # OS files
 .DS_Store
 Thumbs.db
+
+
