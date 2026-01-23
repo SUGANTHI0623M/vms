@@ -110,8 +110,11 @@ def read_visits(
     current_user: User = Depends(auth.get_current_active_user),
     db: Session = Depends(database.get_db)
 ):
+    if current_user.role == "admin" or current_user.is_superuser:
+        return visit_service.get_all_visits(db)
+
     vendor = vendor_service.get_vendor_by_user_id(db, current_user.id)
     if not vendor:
-        raise HTTPException(status_code=400, detail="Vendor profile not found")
-    # Optimized: Filter at database level
-    return visit_service.get_visits_by_vendor_id(db, vendor.id)
+        return []
+        
+    return visit_service.get_visits_for_vendor_view(db, vendor.id, vendor.company_name)

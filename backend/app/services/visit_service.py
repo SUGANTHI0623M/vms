@@ -40,3 +40,18 @@ def get_visit_by_id(db: Session, visit_id: int):
 
 def get_visits_by_vendor_id(db: Session, vendor_id: int):
     return db.query(Visit).filter(Visit.vendor_id == vendor_id).all()
+
+def get_visits_for_vendor_view(db: Session, vendor_id: int, company_name: str = None):
+    from sqlalchemy import or_
+    
+    query = Visit.vendor_id == vendor_id
+    if company_name:
+        # Match "Visiting: CompanyName" case-insensitive
+        # We search for "Visiting: {company_name}"
+        # Ideally, we should be careful about partial matches, e.g. "Hema" matching "Hema Co".
+        # But for now, user context implies simple string matching.
+        # We'll use ilike for case insensitivity.
+        term = f"Visiting: {company_name}%"
+        query = or_(Visit.vendor_id == vendor_id, Visit.purpose.ilike(term))
+        
+    return db.query(Visit).filter(query).all()
