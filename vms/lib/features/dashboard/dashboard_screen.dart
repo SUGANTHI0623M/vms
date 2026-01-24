@@ -7,6 +7,7 @@ import '../../widgets/app_common_widgets.dart';
 import '../home/home_view.dart';
 import '../vendors/vendors_view.dart';
 import '../visit_register/visiting_register_view.dart';
+import '../settings/settings_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -19,7 +20,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic>? _vendorProfile;
   bool _isLoading = true;
   int _currentIndex = 1; // Default to Home (middle)
-  final List<String> _titles = ['Vendors', 'Home Feed', 'Visit Register'];
+  final List<String> _titles = ['Vendors', 'Home Feed', 'Visit Register', 'Settings'];
 
   @override
   void initState() {
@@ -59,16 +60,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
       VisitingRegisterView(
         onCheckInComplete: _loadProfile,
       ), // Pass callback to refresh global state
+      const SettingsScreen(),
     ];
 
     return Scaffold(
-      appBar: CommonAppBar(
-        title: _titles[_currentIndex],
-        verificationStatus: status,
-        onRefresh: _loadProfile,
-      ),
+      appBar: _currentIndex == 3 // Hide CommonAppBar for Settings as it has its own
+          ? null 
+          : CommonAppBar(
+              title: _titles[_currentIndex],
+              verificationStatus: status,
+              onRefresh: _loadProfile,
+            ),
       drawer: AppDrawer(vendorProfile: _vendorProfile, onRefresh: _loadProfile),
-      body: Container(color: Colors.white, child: views[_currentIndex]),
+      body: views[_currentIndex], // Removed hardcoded color container
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           boxShadow: [
@@ -82,9 +86,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
           onTap: (index) => setState(() => _currentIndex = index),
-          backgroundColor: Colors.white,
-          selectedItemColor: AppColors.primary,
-          unselectedItemColor: Colors.grey[400],
+          // Use theme colors
+          backgroundColor: Theme.of(context).bottomNavigationBarTheme.backgroundColor ?? Theme.of(context).scaffoldBackgroundColor,
+          selectedItemColor: Theme.of(context).bottomNavigationBarTheme.selectedItemColor ?? AppColors.primary,
+          unselectedItemColor: Theme.of(context).bottomNavigationBarTheme.unselectedItemColor ?? Colors.grey[400],
           selectedLabelStyle: const TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 12,
@@ -107,6 +112,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               icon: Icon(Icons.assignment_outlined),
               activeIcon: Icon(Icons.assignment),
               label: 'Register',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.settings_outlined),
+              activeIcon: Icon(Icons.settings),
+              label: 'Settings',
             ),
           ],
         ),

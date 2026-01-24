@@ -1,6 +1,6 @@
 class ApiConstants {
-  //static const String baseUrl = 'https://vms-bgqc.onrender.com/api/v1';
-  static const String baseUrl = 'http://10.78.114.36:8000/api/v1';
+  static const String baseUrl = 'https://vms-zeta.vercel.app/api/v1';
+ // static const String baseUrl = 'http://10.78.114.36:8000/api/v1';
 
   static const String login = '/auth/login';
 

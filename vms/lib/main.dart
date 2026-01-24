@@ -5,6 +5,7 @@ import 'features/auth/login_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'services/auth_service.dart';
 import 'services/location_service.dart';
+import 'services/theme_service.dart';
 import 'features/splash/splash_screen.dart';
 
 void main() {
@@ -15,6 +16,7 @@ void main() {
         ChangeNotifierProvider<LocationService>(
           create: (_) => LocationService()..fetchLocation(),
         ),
+        ChangeNotifierProvider<ThemeService>(create: (_) => ThemeService()),
       ],
       child: const VendorApp(),
     ),
@@ -26,11 +28,17 @@ class VendorApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Vendor Management System',
-      theme: AppTheme.lightTheme,
-      home: const AuthWrapper(),
-      debugShowCheckedModeBanner: false,
+    return Consumer<ThemeService>(
+      builder: (context, themeService, child) {
+        return MaterialApp(
+          title: 'Vendor Management System',
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: themeService.themeMode,
+          home: const AuthWrapper(),
+          debugShowCheckedModeBanner: false,
+        );
+      },
     );
   }
 }

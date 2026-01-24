@@ -106,6 +106,8 @@ class _VendorsViewState extends State<VendorsView> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     final myVendors = _filteredVendors.where((v) {
       // Exclude self
       if (_currentVendorProfile != null &&
@@ -139,11 +141,13 @@ class _VendorsViewState extends State<VendorsView> {
                   child: TextField(
                     controller: _searchController,
                     onChanged: _filterVendors,
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
                     decoration: InputDecoration(
                       hintText: 'Search vendors...',
-                      prefixIcon: const Icon(
+                      hintStyle: TextStyle(color: Colors.grey[500]),
+                      prefixIcon: Icon(
                         Icons.search,
-                        color: AppColors.primary,
+                        color: Theme.of(context).primaryColor,
                       ),
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(
@@ -155,14 +159,14 @@ class _VendorsViewState extends State<VendorsView> {
                             )
                           : null,
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: Theme.of(context).cardColor,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(15),
-                        borderSide: BorderSide(color: Colors.grey.shade200),
+                        borderSide: isDark ? BorderSide.none : BorderSide(color: Colors.grey.shade200),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(15),
-                        borderSide: BorderSide(color: Colors.grey.shade200),
+                        borderSide: isDark ? BorderSide.none : BorderSide(color: Colors.grey.shade200),
                       ),
                       contentPadding: const EdgeInsets.symmetric(vertical: 0),
                     ),
@@ -174,17 +178,17 @@ class _VendorsViewState extends State<VendorsView> {
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
-              color: Colors.grey[200],
+              color: isDark ? Colors.grey[900] : Colors.grey[200],
               borderRadius: BorderRadius.circular(12),
             ),
             child: TabBar(
               isScrollable: true,
               indicator: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
-                color: Colors.white,
+                color: isDark ? AppColors.darkPrimary : Colors.white,
               ),
               indicatorSize: TabBarIndicatorSize.tab,
-              labelColor: AppColors.primary,
+              labelColor: isDark ? Colors.black : AppColors.primary,
               unselectedLabelColor: Colors.grey[600],
               labelStyle: const TextStyle(
                 fontWeight: FontWeight.bold,
@@ -227,7 +231,7 @@ class _VendorsViewState extends State<VendorsView> {
           const SizedBox(height: 8),
           Expanded(
             child: Container(
-              color: Colors.grey[50],
+              color: Theme.of(context).scaffoldBackgroundColor,
               child: TabBarView(
                 children: [
                   _buildVendorList(myVendors),
@@ -274,11 +278,12 @@ class _VendorsViewState extends State<VendorsView> {
   Widget _buildVendorCard(Vendor vendor) {
     final bool isVerified =
         vendor.verificationStatus.toUpperCase() == 'VERIFIED';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -351,19 +356,19 @@ class _VendorsViewState extends State<VendorsView> {
                           Expanded(
                             child: Text(
                               vendor.companyName ?? 'Unnamed Company',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 17,
-                                color: Color(0xFF2D3142),
+                                color: Theme.of(context).colorScheme.onSurface,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           if (isVerified)
-                            const Icon(
+                            Icon(
                               Icons.verified,
-                              color: Colors.blue,
+                              color: isDark ? AppColors.darkPrimary : Colors.blue,
                               size: 18,
                             ),
                         ],
@@ -393,15 +398,15 @@ class _VendorsViewState extends State<VendorsView> {
                           _buildMiniTag(
                             icon: Icons.qr_code,
                             label: vendor.vendorUid ?? 'No ID',
-                            color: Colors.grey[100]!,
-                            textColor: Colors.grey[700]!,
+                            color: isDark ? Colors.grey[800]! : Colors.grey[100]!,
+                            textColor: isDark ? Colors.grey[400]! : Colors.grey[700]!,
                           ),
                           const SizedBox(width: 8),
                           _buildMiniTag(
                             icon: Icons.phone,
                             label: vendor.phoneNumber ?? 'No Phone',
-                            color: Colors.grey[100]!,
-                            textColor: Colors.grey[700]!,
+                            color: isDark ? Colors.grey[800]! : Colors.grey[100]!,
+                            textColor: isDark ? Colors.grey[400]! : Colors.grey[700]!,
                           ),
                         ],
                       ),

@@ -21,6 +21,8 @@ class HomeView extends StatelessWidget {
     final status = vendorProfile!['verification_status'] ?? 'PENDING';
     final bool isVerified = status == 'VERIFIED';
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20.0),
       child: Column(
@@ -31,18 +33,21 @@ class HomeView extends StatelessWidget {
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [AppColors.primary, AppColors.primary.withAlpha(180)],
+                colors: isDark 
+                    ? [const Color(0xFF3F3F46), const Color(0xFF18181B)] // Dark grey gradient
+                    : [AppColors.primary, AppColors.primary.withAlpha(180)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primary.withOpacity(0.3),
+                  color: isDark ? Colors.black.withOpacity(0.5) : AppColors.primary.withOpacity(0.3),
                   blurRadius: 20,
                   offset: const Offset(0, 10),
                 ),
               ],
+              border: isDark ? Border.all(color: AppColors.darkPrimary.withOpacity(0.3)) : null,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -64,8 +69,8 @@ class HomeView extends StatelessWidget {
                         const SizedBox(height: 4),
                         Text(
                           name,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: isDark ? AppColors.darkPrimary : Colors.white,
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
                           ),
@@ -88,12 +93,13 @@ class HomeView extends StatelessWidget {
                 const SizedBox(height: 24),
                 Row(
                   children: [
-                    _buildHomeBadge(icon: Icons.fingerprint, label: 'ID: $uid'),
+                    _buildHomeBadge(icon: Icons.fingerprint, label: 'ID: $uid', isDark: isDark),
                     const SizedBox(width: 12),
                     _buildHomeBadge(
                       icon: isVerified ? Icons.verified : Icons.pending,
                       label: status,
                       isSuccess: isVerified,
+                      isDark: isDark,
                     ),
                   ],
                 ),
@@ -103,16 +109,15 @@ class HomeView extends StatelessWidget {
           const SizedBox(height: 30),
 
           // Quick Actions or Stats section could go here
-          const Text(
+          Text(
             'Recent Activities',
-            style: TextStyle(
-              fontSize: 18,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.bold,
-              color: Color(0xFF2D3142),
+              color: Theme.of(context).colorScheme.onBackground,
             ),
           ),
           const SizedBox(height: 16),
-          _buildActivityPlaceholder(),
+          _buildActivityPlaceholder(context),
         ],
       ),
     );
@@ -122,21 +127,23 @@ class HomeView extends StatelessWidget {
     required IconData icon,
     required String label,
     bool isSuccess = false,
+    required bool isDark,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.2),
         borderRadius: BorderRadius.circular(12),
+        border: isDark && isSuccess ? Border.all(color: AppColors.darkPrimary) : null,
       ),
       child: Row(
         children: [
-          Icon(icon, color: Colors.white, size: 14),
+          Icon(icon, color: isDark && isSuccess ? AppColors.darkPrimary : Colors.white, size: 14),
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: isDark && isSuccess ? AppColors.darkPrimary : Colors.white,
               fontSize: 12,
               fontWeight: FontWeight.bold,
             ),
@@ -146,21 +153,22 @@ class HomeView extends StatelessWidget {
     );
   }
 
-  Widget _buildActivityPlaceholder() {
+  Widget _buildActivityPlaceholder(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(40),
       decoration: BoxDecoration(
-        color: Colors.grey[100],
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey[200]!),
+        border: Border.all(color: isDark ? Colors.grey[800]! : Colors.grey[200]!),
       ),
       child: Column(
         children: [
-          Icon(Icons.insights, size: 48, color: Colors.grey[300]),
+          Icon(Icons.insights, size: 48, color: isDark ? Colors.grey[700] : Colors.grey[300]),
           const SizedBox(height: 16),
           Text(
             'Activity feed coming soon...',
-            style: TextStyle(color: Colors.grey[500]),
+            style: TextStyle(color: isDark ? Colors.grey[500] : Colors.grey[500]),
           ),
         ],
       ),

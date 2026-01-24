@@ -22,7 +22,7 @@ class AppDrawer extends StatelessWidget {
         '...';
 
     return Drawer(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       child: Column(
         children: [
           Expanded(
@@ -40,8 +40,8 @@ class AppDrawer extends StatelessWidget {
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.primary,
-                        AppColors.primary.withAlpha(200),
+                        Theme.of(context).primaryColor,
+                        Theme.of(context).primaryColor.withOpacity(0.8),
                       ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
@@ -59,21 +59,21 @@ class AppDrawer extends StatelessWidget {
                           color: Colors.white.withOpacity(0.2),
                           shape: BoxShape.circle,
                         ),
-                        child: const CircleAvatar(
-                          backgroundColor: Colors.white,
+                        child: CircleAvatar(
+                          backgroundColor: Theme.of(context).cardColor,
                           radius: 35,
                           child: Icon(
                             Icons.person,
                             size: 45,
-                            color: AppColors.primary,
+                            color: Theme.of(context).primaryColor,
                           ),
                         ),
                       ),
                       const SizedBox(height: 16),
                       Text(
                         email,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimary,
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 0.5,
@@ -92,8 +92,8 @@ class AppDrawer extends StatelessWidget {
                         ),
                         child: Text(
                           'Vendor ID: $uid',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onPrimary,
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
                           ),
@@ -177,16 +177,24 @@ class CommonAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     return AppBar(
       title: Text(
         title,
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        style: TextStyle(
+          fontWeight: FontWeight.bold, 
+          fontSize: 18,
+          color: isDark ? AppColors.darkTextPrimary : AppColors.primary,
+        ),
       ),
       elevation: 0,
-      backgroundColor: Colors.white,
-      foregroundColor: AppColors.primary,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      foregroundColor: isDark ? AppColors.darkTextPrimary : AppColors.primary,
       centerTitle: true,
-      iconTheme: const IconThemeData(color: AppColors.primary),
+      iconTheme: IconThemeData(
+        color: isDark ? AppColors.darkTextPrimary : AppColors.primary,
+      ),
       actions: [
         if (verificationStatus != null)
           GestureDetector(
