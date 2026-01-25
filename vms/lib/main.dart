@@ -32,8 +32,9 @@ class VendorApp extends StatelessWidget {
       builder: (context, themeService, child) {
         return MaterialApp(
           title: 'Vendor Management System',
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
+          // Pass the selected primary color to generate the theme
+          theme: AppTheme.lightTheme(themeService.primaryColor),
+          darkTheme: AppTheme.darkTheme(themeService.primaryColor),
           themeMode: themeService.themeMode,
           home: const AuthWrapper(),
           debugShowCheckedModeBanner: false,

@@ -1,684 +1,738 @@
-import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_typeahead/flutter_typeahead.dart';
-import 'package:http/http.dart' as http; // For direct Check-In call
 import '../../services/auth_service.dart';
-import '../../services/vendor_service.dart';
 import '../../services/visit_service.dart';
 import '../../services/location_service.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/constants/api_constants.dart';
+import '../checkin/checkin_screen.dart';
+import 'visit_action_screen.dart';
+import '../verification/verification_screen.dart';
 
 class VisitingRegisterView extends StatefulWidget {
   final VoidCallback? onCheckInComplete;
-  const VisitingRegisterView({super.key, this.onCheckInComplete});
+  final Map<String, dynamic>? vendorProfile;
+
+  const VisitingRegisterView({super.key, this.onCheckInComplete, this.vendorProfile});
 
   @override
   State<VisitingRegisterView> createState() => _VisitingRegisterViewState();
 }
 
 class _VisitingRegisterViewState extends State<VisitingRegisterView> {
-  // Data
-  List<String> _companySuggestions = [];
-  List<dynamic> _visits = [];
-  Map<String, dynamic>? _activeVisit;
   bool _isLoading = true;
-  bool _isActionLoading = false;
-  String? _verificationStatus;
-
-  final TextEditingController _searchController = TextEditingController();
-  DateTime? _selectedDate;
-  int _selectedTab = 0; // 0: History, 1: Top 5, 2: Least Visited
+  List<Map<String, dynamic>> _visits = [];
+  int _selectedFilterIndex = 0; // 0: All, 1: Active, 2: History
+  List<Map<String, dynamic>> _companyLocations = [];
 
   @override
   void initState() {
     super.initState();
-    _fetchInitialData();
+    _fetchCompanyLocations().then((_) {
+      _fetchVisits();
+    });
   }
 
-  Future<void> _fetchInitialData() async {
+  Future<void> _fetchVisits() async {
     setState(() => _isLoading = true);
-    final auth = context.read<AuthService>();
-    final token = auth.token;
-
+    final token = context.read<AuthService>().token;
     if (token != null) {
-      final vendorService = VendorService(token);
       final visitService = VisitService();
+      final data = await visitService.getMyVisits(token);
+      if (mounted) {
+        setState(() {
+          _visits = data?.cast<Map<String, dynamic>>() ?? [];
+          // Sort by latest
+          _visits.sort((a, b) {
+             final tA = a['requested_at'] ?? '';
+             final tB = b['requested_at'] ?? '';
+             return tB.compareTo(tA);
+          });
+          _isLoading = false;
+        });
+      }
+    } else {
+       if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
+  Future<void> _fetchCompanyLocations() async {
+    final token = context.read<AuthService>().token;
+    if (token != null) {
       try {
-        final results = await Future.wait([
-          vendorService.getVendorProfile(),
-          vendorService.getVerifiedCompanies(),
-          visitService.getMyVisits(token),
-        ]);
-
-        final profile = results[0] as Map<String, dynamic>?;
-        final companies = results[1] as List<String>?;
-        final visits = results[2] as List<dynamic>?;
-
-        _verificationStatus = profile?['verification_status'];
-        _companySuggestions = companies ?? [];
-
-        if (visits != null) {
-          // Sort by ID desc
-          visits.sort((a, b) => (b['id'] as int).compareTo(a['id'] as int));
-          _visits = visits;
-          // Find active visit (no check_out_time)
-          try {
-            _activeVisit = visits.firstWhere(
-              (v) => v['check_out_time'] == null,
-            );
-          } catch (e) {
-            _activeVisit = null;
+        final visitService = VisitService();
+        final locations = await visitService.getCompanyLocations(token);
+        if (mounted) {
+          setState(() {
+            _companyLocations = locations ?? [];
+          });
+          print('DEBUG: Loaded ${_companyLocations.length} company locations');
+          if (_companyLocations.isNotEmpty) {
+            print('DEBUG: First location: ${_companyLocations.first}');
           }
         }
       } catch (e) {
-        debugPrint('Error fetching initial data: $e');
+        print('DEBUG: Error fetching company locations: $e');
+        if (mounted) {
+          setState(() {
+            _companyLocations = [];
+          });
+        }
+      }
+    }
+  }
+
+  // Haversine formula to calculate distance in meters
+  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    const double R = 6371000; // Earth radius in meters
+    final double phi1 = lat1 * (math.pi / 180);
+    final double phi2 = lat2 * (math.pi / 180);
+    final double deltaPhi = (lat2 - lat1) * (math.pi / 180);
+    final double deltaLambda = (lon2 - lon1) * (math.pi / 180);
+
+    final double a = math.sin(deltaPhi / 2) * math.sin(deltaPhi / 2) +
+        math.cos(phi1) * math.cos(phi2) *
+        math.sin(deltaLambda / 2) * math.sin(deltaLambda / 2);
+    final double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+
+    return R * c;
+  }
+
+  // Find company name based on location (within 300m)
+  String? _detectCompanyName(double? lat, double? lon) {
+    if (lat == null || lon == null) {
+      print('DEBUG: Cannot detect company - lat or lon is null');
+      return null;
+    }
+    
+    if (_companyLocations.isEmpty) {
+      print('DEBUG: No company locations loaded');
+      return null;
+    }
+
+    const double thresholdMeters = 300.0;
+    List<Map<String, dynamic>> nearbyCompanies = [];
+
+    for (var location in _companyLocations) {
+      final companyLat = location['latitude'];
+      final companyLon = location['longitude'];
+      
+      double? parsedLat;
+      double? parsedLon;
+      
+      if (companyLat != null) {
+        parsedLat = companyLat is double ? companyLat : double.tryParse(companyLat.toString());
+      }
+      if (companyLon != null) {
+        parsedLon = companyLon is double ? companyLon : double.tryParse(companyLon.toString());
+      }
+      
+      if (parsedLat != null && parsedLon != null) {
+        final distance = _calculateDistance(lat, lon, parsedLat, parsedLon);
+        if (distance <= thresholdMeters) {
+          nearbyCompanies.add({
+            'company_name': location['company_name'] as String,
+            'distance': distance,
+          });
+          print('DEBUG: Found nearby company: ${location['company_name']} at ${distance.toStringAsFixed(2)}m');
+        }
       }
     }
 
-    if (mounted) setState(() => _isLoading = false);
+    if (nearbyCompanies.isEmpty) {
+      print('DEBUG: No companies found within 300m of lat: $lat, lon: $lon');
+      return null;
+    }
+
+    // Sort by company name alphabetically, then return the first one
+    nearbyCompanies.sort((a, b) {
+      final nameA = (a['company_name'] as String).toLowerCase();
+      final nameB = (b['company_name'] as String).toLowerCase();
+      return nameA.compareTo(nameB);
+    });
+
+    final detectedName = nearbyCompanies.first['company_name'] as String;
+    print('DEBUG: Detected company name: $detectedName');
+    return detectedName;
+  }
+
+  Future<void> _handleCheckAction(Map<String, dynamic> visit, bool isCheckIn) async {
+    final visitId = visit['id'];
+    
+    // Check for cached location first to speed up
+    final locationService = context.read<LocationService>();
+    if (locationService.currentPosition == null) {
+       locationService.fetchLocation(); 
+    }
+
+    // Navigate to the new VisitActionScreen instead of showing dialog
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => VisitActionScreen(
+          visitId: visitId,
+          isCheckIn: isCheckIn,
+          onSuccess: () {
+            // onSuccess is handled below by reloading
+          },
+        ),
+      ),
+    );
+    // Reload visits after returning from action screen
+    _fetchVisits();
+    widget.onCheckInComplete?.call();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).primaryColor;
+    final locationService = context.watch<LocationService>();
+    final currentAddress = locationService.currentAddress;
+    final currentPosition = locationService.currentPosition;
 
-    return RefreshIndicator(
-      onRefresh: _fetchInitialData,
-      child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.all(16),
-            sliver: SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Column(
+      children: [
+        // Location Card
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            color: isDark ? const Color(0xFF27272A) : Colors.white,
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Row(
                 children: [
-                  if (_verificationStatus != 'VERIFIED')
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      margin: const EdgeInsets.only(bottom: 20),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'Verification Pending. You cannot check in yet.',
-                        style: TextStyle(
-                          color: Colors.orange,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-
-                  // ACTION SECTION
-                  if (_activeVisit != null)
-                    _buildActiveVisitCard(_activeVisit!)
-                  else
-                    _buildCheckInButton(),
-
-                  const SizedBox(height: 30),
-
-                  // TABS
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _buildTabItem(0, "History", Icons.history),
-                      _buildTabItem(1, "Top 5", Icons.trending_up),
-                      _buildTabItem(2, "Least", Icons.trending_down),
-                    ],
-                  ),
-                  const Divider(),
-                  const SizedBox(height: 10),
+                   Icon(Icons.location_on, color: primaryColor),
+                   const SizedBox(width: 8),
+                   Expanded(
+                     child: Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         Text(
+                           currentAddress ?? "Fetching location...",
+                           style: TextStyle(
+                             fontWeight: FontWeight.bold,
+                             color: isDark ? Colors.white : Colors.black,
+                             fontSize: 14,
+                           ),
+                           maxLines: 2,
+                           overflow: TextOverflow.ellipsis,
+                         ),
+                         if (currentPosition != null)
+                           Text(
+                             'Lat: ${currentPosition.latitude.toStringAsFixed(4)}, Long: ${currentPosition.longitude.toStringAsFixed(4)}',
+                             style: TextStyle(
+                               fontSize: 12, 
+                               color: isDark ? Colors.grey[400] : Colors.grey[600]
+                             ),
+                           ),
+                       ],
+                     ),
+                   ),
+                   if (locationService.isLoading)
+                     const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
                 ],
               ),
             ),
           ),
-          if (_selectedTab == 0) ...[
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverToBoxAdapter(child: _buildFilters()),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 10)),
-            _buildSliverHistoryList(),
-          ] else if (_selectedTab == 1) ...[
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverToBoxAdapter(
-                child: _buildCompanyStats(isTop: true),
+        ),
+
+        // Filter Chips
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              ElevatedButton.icon(
+                onPressed: () async {
+                   final isVerified = widget.vendorProfile?['verification_status'] == 'VERIFIED';
+                   
+                   if (!isVerified) {
+                     ScaffoldMessenger.of(context).showSnackBar(
+                       const SnackBar(
+                         content: Text("Get verified to check in"),
+                         backgroundColor: Colors.orange,
+                         duration: Duration(seconds: 2),
+                       ),
+                     );
+                     
+                     // Navigate to verification screen
+                     final result = await Navigator.push(
+                       context, 
+                       MaterialPageRoute(builder: (_) => const VerificationScreen())
+                     );
+                     
+                     if (result == true) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text("Verified! Refreshing soon..."),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                        widget.onCheckInComplete?.call();
+                     }
+                     return;
+                   }
+
+                   await Navigator.push(context, MaterialPageRoute(builder: (_) => CheckInScreen()));
+                   _fetchVisits();
+                },
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text("New Visit"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  foregroundColor: isDark ? Colors.black : Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+              ),
+              const SizedBox(width: 10),
+              _buildFilterChip("All Visits", 0, primaryColor, isDark),
+              const SizedBox(width: 10),
+              _buildFilterChip("Active", 1, primaryColor, isDark),
+              const SizedBox(width: 10),
+              _buildFilterChip("History", 2, primaryColor, isDark),
+            ],
+          ),
+        ),
+
+        Expanded(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _visits.isEmpty
+                  ? Center(child: Text("No visits found", style: TextStyle(color: Colors.grey[600])))
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _visits.length,
+                      itemBuilder: (context, index) {
+                        final visit = _visits[index];
+                        // Try to get selfie and location from raw map
+                        final checkInSelfieUrl = visit['check_in_selfie_url'] ?? visit['selfie_url'];
+                        final checkOutSelfieUrl = visit['check_out_selfie_url'];
+                        final lat = visit['check_in_latitude'];
+                        final long = visit['check_in_longitude'];
+                          final checkInAddress = visit['check_in_location'] ?? visit['location']; 
+                        final checkOutAddress = visit['check_out_location'];
+                        
+                        return _buildVisitCard(visit, isDark, primaryColor, checkInSelfieUrl, checkOutSelfieUrl, lat, long, checkInAddress, checkOutAddress);
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFilterChip(String label, int index, Color primary, bool isDark) {
+    final isSelected = _selectedFilterIndex == index;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedFilterIndex = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: isSelected ? primary : Colors.grey[600]!),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected 
+                ? (ThemeData.estimateBrightnessForColor(primary) == Brightness.dark ? Colors.white : Colors.black)
+                : (isDark ? Colors.grey[400] : Colors.grey[600]),
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVisitCard(Map<String, dynamic> visit, bool isDark, Color primary, String? checkInSelfieUrl, String? checkOutSelfieUrl, dynamic lat, dynamic long, String? checkInAddress, String? checkOutAddress) {
+    // First, try to detect company name based on location
+    double? visitLat;
+    double? visitLon;
+    
+    if (lat != null) {
+      if (lat is double) {
+        visitLat = lat;
+      } else if (lat is int) {
+        visitLat = lat.toDouble();
+      } else {
+        visitLat = double.tryParse(lat.toString());
+      }
+    }
+    
+    if (long != null) {
+      if (long is double) {
+        visitLon = long;
+      } else if (long is int) {
+        visitLon = long.toDouble();
+      } else {
+        visitLon = double.tryParse(long.toString());
+      }
+    }
+    
+    print('DEBUG: Visit card - lat: $visitLat, lon: $visitLon');
+    final String? detectedCompanyName = _detectCompanyName(visitLat, visitLon);
+    
+    // Parsing purpose
+    String fullPurpose = visit['purpose'] ?? 'Visit';
+    String parsedCompanyName = fullPurpose;
+    String? description;
+
+    // Try to extract Company from "Visiting: Company. Description" or "Visiting: Company"
+    if (fullPurpose.toLowerCase().startsWith('visiting: ')) {
+      String temp = fullPurpose.substring(10); // Remove "Visiting: "
+      if (temp.contains('.')) {
+        int dotIndex = temp.indexOf('.');
+        parsedCompanyName = temp.substring(0, dotIndex).trim();
+        description = temp.substring(dotIndex + 1).trim();
+      } else {
+        parsedCompanyName = temp.trim();
+        description = null;
+      }
+    } else {
+        if (fullPurpose.contains('.')) {
+             int dotIndex = fullPurpose.indexOf('.');
+             parsedCompanyName = fullPurpose.substring(0, dotIndex).trim();
+             description = fullPurpose.substring(dotIndex + 1).trim();
+        }
+    }
+    
+    // Use detected company name when available (same value we log)
+    final String companyName = (detectedCompanyName != null && detectedCompanyName.isNotEmpty)
+        ? detectedCompanyName
+        : parsedCompanyName;
+    
+    if (detectedCompanyName != null && detectedCompanyName.isNotEmpty) {
+      print('DEBUG: Using detected company name: $detectedCompanyName -> showing in card: "$companyName"');
+    } else {
+      print('DEBUG: No company detected, using parsed name: $companyName');
+    }
+
+    final dateRaw = visit['check_in_time'] ?? visit['requested_at'];
+    final date = dateRaw != null ? (dateRaw as String).split('T')[0] : 'Unknown Date';
+    
+    final timeIn = visit['check_in_time'] != null 
+        ? (visit['check_in_time'] as String).split('T')[1].substring(0, 5) 
+        : '--:--';
+        
+    final timeOut = visit['check_out_time'] != null 
+        ? (visit['check_out_time'] as String).split('T')[1].substring(0, 5) 
+        : '--:--';
+        
+    final isCheckedIn = visit['check_in_time'] != null;
+    final isCheckedOut = visit['check_out_time'] != null;
+    final status = visit['status']; // APPROVED, COMPLETED, etc.
+    
+    // Filter logic
+    if (_selectedFilterIndex == 1 && isCheckedOut) return const SizedBox.shrink(); // Active only
+    if (_selectedFilterIndex == 2 && !isCheckedOut) return const SizedBox.shrink(); // History only (completed)
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF27272A) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: isDark ? null : [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      companyName,
+                      style: TextStyle(
+                        color: isDark ? Colors.white : Colors.black,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (description != null && description.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: Text(
+                          description,
+                          style: TextStyle(
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              // Status Badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isCheckedOut ? Colors.grey : (isCheckedIn ? Colors.green : Colors.orange),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  isCheckedOut ? "Completed" : (isCheckedIn ? "Checked In" : (status ?? "Pending")),
+                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          
+          if ((checkInSelfieUrl != null && checkInSelfieUrl.isNotEmpty) || (checkOutSelfieUrl != null && checkOutSelfieUrl.isNotEmpty))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                   if (checkInSelfieUrl != null && checkInSelfieUrl.isNotEmpty)
+                     Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         Text("Check In", style: TextStyle(fontSize: 10, color: isDark ? Colors.grey[400] : Colors.grey[600])),
+                         const SizedBox(height: 4),
+                         ClipRRect(
+                           borderRadius: BorderRadius.circular(8),
+                           child: Image.network(
+                             checkInSelfieUrl,
+                             height: 60,
+                             width: 60,
+                             fit: BoxFit.cover,
+                             errorBuilder: (ctx, err, stack) => Container(
+                               height: 60,
+                               width: 60,
+                               color: Colors.grey[300],
+                               child: const Center(child: Icon(Icons.broken_image, size: 20, color: Colors.grey)),
+                             ),
+                           ),
+                         ),
+                       ],
+                     ),
+                   if (checkInSelfieUrl != null && checkInSelfieUrl.isNotEmpty && checkOutSelfieUrl != null && checkOutSelfieUrl.isNotEmpty)
+                     const SizedBox(width: 10),
+                   if (checkOutSelfieUrl != null && checkOutSelfieUrl.isNotEmpty)
+                     Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         Text("Check Out", style: TextStyle(fontSize: 10, color: isDark ? Colors.grey[400] : Colors.grey[600])),
+                         const SizedBox(height: 4),
+                         ClipRRect(
+                           borderRadius: BorderRadius.circular(8),
+                           child: Image.network(
+                             checkOutSelfieUrl,
+                             height: 60,
+                             width: 60,
+                             fit: BoxFit.cover,
+                             errorBuilder: (ctx, err, stack) => Container(
+                               height: 60,
+                               width: 60,
+                               color: Colors.grey[300],
+                               child: const Center(child: Icon(Icons.broken_image, size: 20, color: Colors.grey)),
+                             ),
+                           ),
+                         ),
+                       ],
+                     ),
+                ],
               ),
             ),
-          ] else ...[
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverToBoxAdapter(
-                child: _buildCompanyStats(isTop: false),
-              ),
-            ),
+
+          // Address / Location (Moved right after Selfie)
+          if (checkInAddress != null || checkOutAddress != null || (lat != null && long != null))
+             Padding(
+               padding: const EdgeInsets.only(bottom: 8),
+               child: Column(
+                 crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (checkInAddress != null && checkInAddress.isNotEmpty) ...[
+                               Row(
+                                 crossAxisAlignment: CrossAxisAlignment.start,
+                                 children: [
+                                    Icon(Icons.location_on, size: 14, color: Colors.green),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text("Check In Location:", style: TextStyle(fontSize: 10, color: isDark ? Colors.grey[400] : Colors.grey[600], fontWeight: FontWeight.bold)),
+                                          if (companyName.isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(top: 2.0),
+                                              child: Text(
+                                                companyName,
+                                                style: TextStyle(
+                                                  color: isDark ? Colors.white : Colors.black,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          Text(
+                                            checkInAddress,
+                                            style: TextStyle(
+                                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                 ],
+                               ),
+                               const SizedBox(height: 8),
+                            ],
+                            if (checkOutAddress != null && checkOutAddress.isNotEmpty) ...[
+                               Row(
+                                 crossAxisAlignment: CrossAxisAlignment.start,
+                                 children: [
+                                    Icon(Icons.location_on, size: 14, color: Colors.red),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text("Check Out Location:", style: TextStyle(fontSize: 10, color: isDark ? Colors.grey[400] : Colors.grey[600], fontWeight: FontWeight.bold)),
+                                          if (companyName.isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(top: 2.0),
+                                              child: Text(
+                                                companyName,
+                                                style: TextStyle(
+                                                  color: isDark ? Colors.white : Colors.black,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          Text(
+                                            checkOutAddress,
+                                            style: TextStyle(
+                                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                 ],
+                               ),
+                               const SizedBox(height: 8),
+                            ],
+                   // Fallback to Lat/Long if no address
+                   if ((checkInAddress == null && checkOutAddress == null) && (lat != null && long != null))
+                     Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         if (companyName.isNotEmpty)
+                           Padding(
+                             padding: const EdgeInsets.only(bottom: 4.0),
+                             child: Text(
+                               companyName,
+                               style: TextStyle(
+                                 color: isDark ? Colors.white : Colors.black,
+                                 fontSize: 12,
+                                 fontWeight: FontWeight.bold,
+                               ),
+                               overflow: TextOverflow.ellipsis,
+                             ),
+                           ),
+                         Row(
+                           children: [
+                             Icon(Icons.location_on, size: 14, color: isDark ? Colors.grey[400] : Colors.grey[600]),
+                             const SizedBox(width: 4),
+                             Expanded(
+                               child: Text(
+                                 "Lat: $lat, Long: $long",
+                                 style: TextStyle(
+                                   color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                   fontSize: 12,
+                                 ),
+                                 overflow: TextOverflow.ellipsis,
+                               ),
+                             ),
+                           ],
+                         ),
+                       ],
+                     ),
+                 ],
+               ),
+             ),
+
+          const Divider(height: 20),
+          
+          // Date & Time
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildTimeColumn("Date", date, isDark),
+              _buildTimeColumn("In", timeIn, isDark),
+              _buildTimeColumn("Out", timeOut, isDark),
+            ],
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // Action Buttons
+          if ((status == 'APPROVED' || status == 'WAITING') || (isCheckedIn && !isCheckedOut)) ...[
+             const SizedBox(height: 16),
+             SizedBox(
+               width: double.infinity,
+               child: !isCheckedIn 
+                 ? ElevatedButton.icon(
+                     onPressed: () => _handleCheckAction(visit, true),
+                     icon: const Icon(Icons.login),
+                     label: const Text("Check In"),
+                     style: ElevatedButton.styleFrom(
+                       backgroundColor: Colors.green,
+                       foregroundColor: Colors.white,
+                     ),
+                   )
+                 : !isCheckedOut
+                     ? ElevatedButton.icon(
+                         onPressed: () => _handleCheckAction(visit, false),
+                         icon: const Icon(Icons.logout),
+                         label: const Text("Check Out"),
+                         style: ElevatedButton.styleFrom(
+                           backgroundColor: Colors.red,
+                           foregroundColor: Colors.white,
+                         ),
+                       )
+                     : const SizedBox.shrink(),
+             ),
           ],
-          const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
       ),
     );
   }
-
-  Widget _buildTabItem(int index, String label, IconData icon) {
-    bool isSelected = _selectedTab == index;
-    return InkWell(
-      onTap: () => setState(() => _selectedTab = index),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: isSelected ? AppColors.primary : Colors.transparent,
-              width: 2,
-            ),
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: isSelected ? AppColors.primary : Colors.grey),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? AppColors.primary : Colors.grey,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilters() {
+  
+  Widget _buildTimeColumn(String label, String value, bool isDark) {
     return Column(
       children: [
-        TextField(
-          controller: _searchController,
-          decoration: InputDecoration(
-            hintText: "Search company...",
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: _searchController.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: () {
-                      _searchController.clear();
-                      setState(() {});
-                    },
-                  )
-                : null,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-          onChanged: (_) => setState(() {}),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            const Icon(Icons.calendar_today, size: 20, color: Colors.grey),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                _selectedDate == null
-                    ? "Filter by date"
-                    : "Date: ${_selectedDate!.toLocal().toString().split(' ')[0]}",
-              ),
-            ),
-            if (_selectedDate != null)
-              TextButton(
-                onPressed: () => setState(() => _selectedDate = null),
-                child: const Text("Clear"),
-              ),
-            ElevatedButton(
-              onPressed: () async {
-                final date = await showDatePicker(
-                  context: context,
-                  initialDate: DateTime.now(),
-                  firstDate: DateTime(2025),
-                  lastDate: DateTime.now(),
-                );
-                if (date != null) setState(() => _selectedDate = date);
-              },
-              child: const Text("Select Date"),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCompanyStats({required bool isTop}) {
-    // Aggregate
-    Map<String, int> counts = {};
-    for (var v in _visits) {
-      String p = v['purpose'] ?? '';
-      // Extract company: "Visiting: Company. ..."
-      String company = "Unknown";
-      if (p.startsWith("Visiting: ")) {
-        company = p.split("Visiting: ")[1].split(".")[0];
-      }
-      counts[company] = (counts[company] ?? 0) + 1;
-    }
-
-    var sorted = counts.entries.toList()
-      ..sort(
-        (a, b) =>
-            isTop ? b.value.compareTo(a.value) : a.value.compareTo(b.value),
-      );
-
-    var displayList = sorted.take(5).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Text(
-            isTop ? "5 Most Visited Companies" : "Least Visited Companies",
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        Text(
+          label,
+          style: TextStyle(
+            color: isDark ? Colors.grey[500] : Colors.grey[600],
+            fontSize: 12,
           ),
         ),
-        ...displayList.map(
-          (e) => ListTile(
-            title: Text(e.key),
-            trailing: CircleAvatar(child: Text(e.value.toString())),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCheckInButton() {
-    return ElevatedButton.icon(
-      onPressed: _verificationStatus == 'VERIFIED' ? _handleCheckInPress : null,
-      icon: const Icon(Icons.login),
-      label: const Text('Check In'),
-      style: ElevatedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        textStyle: const TextStyle(fontSize: 18),
-      ),
-    );
-  }
-
-  Widget _buildActiveVisitCard(Map<String, dynamic> visit) {
-    // Determine company request
-    String title = visit['purpose'] ?? 'Unknown Visit';
-    // Attempt to parse company from "Visiting: Company. Purpose"
-
-    return Card(
-      color: Colors.green.shade50,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            const Text(
-              "Currently Checked In",
-              style: TextStyle(
-                color: Colors.green,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 5),
-            Text("Checked in at: ${visit['check_in_time'] ?? '--'}"),
-            const SizedBox(height: 15),
-            _isActionLoading
-                ? const CircularProgressIndicator()
-                : ElevatedButton.icon(
-                    onPressed: () => _handleCheckOutPress(visit['id']),
-                    icon: const Icon(Icons.logout),
-                    label: const Text("Check Out"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _handleCheckInPress() async {
-    // 1. Company Selection Dialog
-    final company = await showDialog<String>(
-      context: context,
-      builder: (context) =>
-          _CompanySelectionDialog(suggestions: _companySuggestions),
-    );
-
-    if (company == null || company.isEmpty) return;
-
-    // 2. Camera
-    final picker = ImagePicker();
-    final photo = await picker.pickImage(
-      source: ImageSource.camera,
-      preferredCameraDevice: CameraDevice.front,
-      imageQuality: 50, // Reduce file size significantly
-      maxWidth: 1024, // Limit resolution
-    );
-
-    if (photo == null) return;
-
-    // 3. Location
-    setState(() => _isActionLoading = true);
-    final locService = context.read<LocationService>();
-    await locService
-        .refreshLocation(); // FORCE REFRESH to ensure accurate tracking
-
-    if (locService.currentPosition == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Location not found.")));
-      }
-      setState(() => _isActionLoading = false);
-      return;
-    }
-
-    // 4. Submit
-    final auth = context.read<AuthService>();
-    try {
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('${ApiConstants.baseUrl}/visits/check-in'),
-      );
-      request.headers['Authorization'] = 'Bearer ${auth.token}';
-      request.fields['check_in_latitude'] = locService.currentPosition!.latitude
-          .toString();
-      request.fields['check_in_longitude'] = locService
-          .currentPosition!
-          .longitude
-          .toString();
-      request.fields['company_name'] = company;
-
-      // Pass valid parts
-      final parts = locService.addressParts;
-      request.fields['area'] = parts['area'] ?? '';
-      request.fields['city'] = parts['city'] ?? '';
-      request.fields['state'] = parts['state'] ?? '';
-      request.fields['pincode'] = parts['pincode'] ?? '';
-
-      request.files.add(
-        await http.MultipartFile.fromPath('selfie', photo.path),
-      );
-
-      var response = await request.send();
-      if (response.statusCode == 200) {
-        await _fetchInitialData(); // Refresh to show active visit
-        if (widget.onCheckInComplete != null) widget.onCheckInComplete!();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Checked In Successfully!")),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text("Check-in Failed.")));
-        }
-      }
-    } catch (e) {
-      debugPrint("Checkin error: $e");
-    } finally {
-      if (mounted) setState(() => _isActionLoading = false);
-    }
-  }
-
-  Future<void> _handleCheckOutPress(int visitId) async {
-    final picker = ImagePicker();
-    final photo = await picker.pickImage(
-      source: ImageSource.camera,
-      preferredCameraDevice: CameraDevice.front,
-      imageQuality: 50,
-      maxWidth: 1024,
-    );
-
-    if (photo == null) return;
-
-    setState(() => _isActionLoading = true);
-    final locService = context.read<LocationService>();
-    await locService
-        .refreshLocation(); // Ensure we get fresh coords for checkout
-
-    if (locService.currentPosition == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Location not found.")));
-      }
-      setState(() => _isActionLoading = false);
-      return;
-    }
-
-    final auth = context.read<AuthService>();
-    final service = VisitService();
-    final success = await service.checkOut(
-      visitId,
-      locService.currentPosition!.latitude,
-      locService.currentPosition!.longitude,
-      File(photo.path),
-      auth.token!,
-    );
-
-    if (success) {
-      await _fetchInitialData();
-      if (widget.onCheckInComplete != null) widget.onCheckInComplete!();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Checked Out Successfully!")),
-        );
-      }
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Check-out Failed.")));
-      }
-    }
-    if (mounted) setState(() => _isActionLoading = false);
-  }
-
-  Widget _buildSliverHistoryList() {
-    var filtered = _visits.where((v) {
-      final purpose = v['purpose']?.toString().toLowerCase() ?? '';
-      final search = _searchController.text.toLowerCase();
-      final dateMatch =
-          _selectedDate == null ||
-          v['check_in_time']?.toString().startsWith(
-                _selectedDate!.toLocal().toString().split(' ')[0],
-              ) ==
-              true;
-      return purpose.contains(search) && dateMatch;
-    }).toList();
-
-    if (filtered.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: Center(
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 20),
-            child: Text("No visits matching your filters."),
-          ),
-        ),
-      );
-    }
-
-    return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      sliver: SliverList(
-        delegate: SliverChildBuilderDelegate((context, index) {
-          final v = filtered[index];
-          final purpose = v['purpose'] ?? 'Visit';
-          final checkInTimeStr = v['check_in_time']?.toString() ?? '';
-          final date = checkInTimeStr.split('T')[0];
-          final timeIn = checkInTimeStr.contains('T')
-              ? checkInTimeStr.split('T')[1].split('.')[0]
-              : '--';
-          final timeOut = v['check_out_time']?.toString().contains('T') == true
-              ? v['check_out_time']?.toString().split('T')[1].split('.')[0]
-              : '--';
-
-          final url = v['check_in_selfie_url'];
-
-          // Address parts
-          final address = [v['area'], v['city'], v['state'], v['pincode']]
-              .where((e) => e != null && e.toString().trim().isNotEmpty)
-              .join(', ');
-
-          final lat = v['check_in_latitude'];
-          final long = v['check_in_longitude'];
-          final outLat = v['check_out_latitude'];
-          final outLong = v['check_out_longitude'];
-
-          return Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: ExpansionTile(
-              leading: url != null
-                  ? CircleAvatar(backgroundImage: NetworkImage(url))
-                  : const Icon(Icons.location_on),
-              title: Text(
-                purpose,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text("$date | In: $timeIn Out: $timeOut"),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Full Address:",
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      Text(address.isEmpty ? "No address recorded" : address),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  "Check-In Coords:",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                Text(
-                                  "Lat: $lat\nLong: $long",
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (outLat != null)
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    "Check-Out Coords:",
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  Text(
-                                    "Lat: $outLat\nLong: $outLong",
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        }, childCount: filtered.length),
-      ),
-    );
-  }
-}
-
-class _CompanySelectionDialog extends StatefulWidget {
-  final List<String> suggestions;
-  const _CompanySelectionDialog({required this.suggestions});
-
-  @override
-  State<_CompanySelectionDialog> createState() =>
-      _CompanySelectionDialogState();
-}
-
-class _CompanySelectionDialogState extends State<_CompanySelectionDialog> {
-  final TextEditingController _controller = TextEditingController();
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text("Who are you visiting?"),
-      content: TypeAheadField<String>(
-        suggestionsCallback: (pattern) {
-          return widget.suggestions
-              .where((c) => c.toLowerCase().contains(pattern.toLowerCase()))
-              .toList();
-        },
-        builder: (context, controller, focusNode) {
-          // TypeAheadField provides a controller that manages the text field
-          // But we need to extract the value when user clicks Next.
-          // Effectively, we can use the `controller` provided by builder and read it on button press?
-          // The `controller` here is likely owned by TypeAhead.
-          // Let's hook our own _controller to it if possible? Use `controller: _controller` in TypeAheadField props?
-          // New version of TypeAheadField requires passing controller to TextField.
-          // We can synchronize.
-          controller.addListener(() {
-            _controller.text = controller.text;
-          });
-          return TextField(
-            controller: controller,
-            focusNode: focusNode,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              labelText: "Company Name",
-            ),
-          );
-        },
-        itemBuilder: (context, suggestion) {
-          return ListTile(title: Text(suggestion));
-        },
-        onSelected: (suggestion) {
-          // Set text handled by TypeAhead internal controller usually,
-          // but we need to know we selected something.
-          _controller.text = suggestion;
-          Navigator.pop(context, suggestion);
-        },
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text("Cancel"),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            // Use typed text if not selected
-            Navigator.pop(context, _controller.text);
-          },
-          child: const Text("Next"),
         ),
       ],
     );

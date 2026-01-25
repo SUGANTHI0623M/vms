@@ -3,134 +3,198 @@ import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
 class AppTheme {
-  static ThemeData get lightTheme {
+  /// Generates the Light Theme based on a seed color
+  static ThemeData lightTheme(Color seedColor) {
     return ThemeData(
       brightness: Brightness.light,
-      primaryColor: AppColors.primary,
+      primaryColor: seedColor,
       scaffoldBackgroundColor: AppColors.background,
-      colorScheme: ColorScheme.fromSwatch(
-        primarySwatch: Colors.blue,
-        accentColor: AppColors.accent,
-        backgroundColor: AppColors.background,
-        errorColor: AppColors.error,
+      
+      // Using ColorScheme.fromSeed ensures all colors (primary, secondary, tertiary, container colors) 
+      // are generated harmoniously from the seed.
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: seedColor,
         brightness: Brightness.light,
-      ).copyWith(
+        background: AppColors.background,
         surface: AppColors.surface,
+        error: AppColors.error,
       ),
-      textTheme: GoogleFonts.interTextTheme(),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.primary,
+      
+      textTheme: GoogleFonts.interTextTheme(ThemeData.light().textTheme).apply(
+        bodyColor: AppColors.textPrimary,
+        displayColor: AppColors.textPrimary,
+      ),
+      
+      appBarTheme: AppBarTheme(
+        backgroundColor: seedColor,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: TextStyle(
+        titleTextStyle: const TextStyle(
           color: Colors.white,
           fontSize: 20,
           fontWeight: FontWeight.bold,
         ),
-        iconTheme: IconThemeData(color: Colors.white),
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
+      
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
+          backgroundColor: seedColor,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 2,
         ),
       ),
+
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: seedColor,
+          side: BorderSide(color: seedColor),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+
+      cardTheme: CardThemeData(
+        color: AppColors.surface,
+        elevation: 2,
+        shadowColor: Colors.black.withOpacity(0.1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.surface,
+        fillColor: Colors.white,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Colors.grey),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade300),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Colors.grey),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade300),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.primary, width: 2),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: seedColor, width: 2),
         ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
-        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      ),
+
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        backgroundColor: Colors.white,
+        selectedItemColor: seedColor,
+        unselectedItemColor: Colors.grey[400],
+        type: BottomNavigationBarType.fixed,
+        elevation: 8,
       ),
     );
   }
 
-  static ThemeData get darkTheme {
+  /// Generates the Dark Theme based on a seed color
+  static ThemeData darkTheme(Color seedColor) {
+    // For dark mode, sometimes we want the primary color to be slightly lighter or saturated
+    // to be visible against dark background. ColorScheme.fromSeed handles this well.
+    
     return ThemeData(
       brightness: Brightness.dark,
-      primaryColor: AppColors.darkPrimary,
+      primaryColor: seedColor,
       scaffoldBackgroundColor: AppColors.darkBackground,
-      colorScheme: const ColorScheme.dark(
-        primary: AppColors.darkPrimary,
-        secondary: AppColors.darkAccent,
-        surface: AppColors.darkSurface,
+      
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: seedColor,
+        brightness: Brightness.dark,
         background: AppColors.darkBackground,
+        surface: AppColors.darkSurface,
         error: AppColors.error,
-        onPrimary: Colors.black, // Text on Gold button
-        onSecondary: Colors.black,
-        onSurface: AppColors.darkTextPrimary,
-        onBackground: AppColors.darkTextPrimary,
+        // Ensure onPrimary is readable (usually black on bright colors like yellow/green, white on blue/purple)
+        onPrimary: ThemeData.estimateBrightnessForColor(seedColor) == Brightness.dark 
+            ? Colors.white 
+            : Colors.black, 
       ),
+      
       textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme).apply(
         bodyColor: AppColors.darkTextPrimary,
         displayColor: AppColors.darkTextPrimary,
       ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.darkBackground,
+      
+      appBarTheme: AppBarTheme(
+        backgroundColor: seedColor,
         elevation: 0,
         centerTitle: true,
         titleTextStyle: TextStyle(
-          color: AppColors.darkTextPrimary,
+          color: ThemeData.estimateBrightnessForColor(seedColor) == Brightness.dark 
+              ? Colors.white 
+              : Colors.black,
           fontSize: 20,
           fontWeight: FontWeight.bold,
         ),
-        iconTheme: IconThemeData(color: AppColors.darkTextPrimary),
+        iconTheme: IconThemeData(
+          color: ThemeData.estimateBrightnessForColor(seedColor) == Brightness.dark 
+              ? Colors.white 
+              : Colors.black,
+        ),
       ),
+      
       cardTheme: CardThemeData(
         color: AppColors.darkSurface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         elevation: 0,
       ),
+      
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.darkPrimary,
-          foregroundColor: Colors.black, // Black text on Gold button
+          backgroundColor: seedColor,
+          // Dynamically choose text color based on button brightness
+          foregroundColor: ThemeData.estimateBrightnessForColor(seedColor) == Brightness.dark 
+              ? Colors.white 
+              : Colors.black,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           textStyle: const TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
+      
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: seedColor,
+          side: BorderSide(color: seedColor),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.darkSurface,
-        hintStyle: TextStyle(color: AppColors.darkTextSecondary),
+        hintStyle: const TextStyle(color: AppColors.darkTextSecondary),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.darkPrimary, width: 1),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: seedColor, width: 1),
         ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
-        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
-      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: AppColors.darkSurface,
-        selectedItemColor: AppColors.darkPrimary,
+        selectedItemColor: seedColor,
         unselectedItemColor: AppColors.darkTextSecondary,
         type: BottomNavigationBarType.fixed,
+        elevation: 0,
+      ),
+      
+      // Floating Action Button
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: seedColor,
+        foregroundColor: ThemeData.estimateBrightnessForColor(seedColor) == Brightness.dark 
+              ? Colors.white 
+              : Colors.black,
       ),
     );
   }

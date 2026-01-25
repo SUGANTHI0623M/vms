@@ -31,8 +31,9 @@ class VisitService extends ChangeNotifier {
     double lat,
     double long,
     File selfie,
-    String token,
-  ) async {
+    String token, {
+    String? address,
+  }) async {
     try {
       var request = http.MultipartRequest(
         'POST',
@@ -41,6 +42,9 @@ class VisitService extends ChangeNotifier {
       request.headers['Authorization'] = 'Bearer $token';
       request.fields['check_out_latitude'] = lat.toString();
       request.fields['check_out_longitude'] = long.toString();
+      if (address != null) {
+        request.fields['check_out_location'] = address;
+      }
       request.files.add(
         await http.MultipartFile.fromPath('selfie', selfie.path),
       );
@@ -112,19 +116,30 @@ class VisitService extends ChangeNotifier {
     }
   }
 
-  Future<bool> checkIn(int visitId, String? selfieUrl, String token) async {
+  Future<bool> checkIn(
+    int visitId,
+    double lat,
+    double long,
+    File selfie,
+    String token, {
+    String? address,
+  }) async {
     try {
-      final response = await http.post(
-        Uri.parse(
-          '${ApiConstants.baseUrl}${ApiConstants.visitCheckIn}/$visitId/check-in',
-        ),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: json.encode({'selfie_url': selfieUrl}),
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${ApiConstants.baseUrl}${ApiConstants.visitCheckIn}/$visitId/check-in'),
+      );
+      request.headers['Authorization'] = 'Bearer $token';
+      request.fields['check_in_latitude'] = lat.toString();
+      request.fields['check_in_longitude'] = long.toString();
+      if (address != null) {
+        request.fields['check_in_location'] = address;
+      }
+      request.files.add(
+        await http.MultipartFile.fromPath('selfie', selfie.path),
       );
 
+      var response = await request.send();
       return response.statusCode == 200;
     } catch (e) {
       debugPrint('Check-in error: $e');
@@ -149,6 +164,22 @@ class VisitService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Load pending visits error: $e');
       return false;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>?> getCompanyLocations(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConstants.baseUrl}/vendors/company-locations'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200) {
+        return List<Map<String, dynamic>>.from(json.decode(response.body));
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Get company locations error: $e');
+      return null;
     }
   }
 }

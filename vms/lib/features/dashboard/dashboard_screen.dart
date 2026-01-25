@@ -59,6 +59,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       HomeView(vendorProfile: _vendorProfile), // Home takes profile directly
       VisitingRegisterView(
         onCheckInComplete: _loadProfile,
+        vendorProfile: _vendorProfile,
       ), // Pass callback to refresh global state
       const SettingsScreen(),
     ];

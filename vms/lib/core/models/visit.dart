@@ -17,6 +17,7 @@ class Visit {
   final int? rating;
   final String? feedback;
   final String? checkInSelfieUrl;
+  final String? checkOutSelfieUrl;
 
   Visit({
     required this.id,
@@ -35,6 +36,7 @@ class Visit {
     this.rating,
     this.feedback,
     this.checkInSelfieUrl,
+    this.checkOutSelfieUrl,
   });
 
   factory Visit.fromJson(Map<String, dynamic> json) {
@@ -64,6 +66,7 @@ class Visit {
       rating: json['rating'],
       feedback: json['feedback'],
       checkInSelfieUrl: json['check_in_selfie_url'],
+      checkOutSelfieUrl: json['check_out_selfie_url'],
     );
   }
 
@@ -85,6 +88,7 @@ class Visit {
       'rating': rating,
       'feedback': feedback,
       'check_in_selfie_url': checkInSelfieUrl,
+      'check_out_selfie_url': checkOutSelfieUrl,
     };
   }
 }

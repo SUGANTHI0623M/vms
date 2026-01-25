@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/theme/app_colors.dart';
 
 class ThemeService extends ChangeNotifier {
-  static const String _themeKey = 'theme_mode';
+  static const String _themeModeKey = 'theme_mode';
+  static const String _themeColorKey = 'theme_color'; // New key for color
+
   ThemeMode _themeMode = ThemeMode.system;
+  Color _primaryColor = AppColors.primaryBlue; // Default Blue
 
   ThemeMode get themeMode => _themeMode;
+  Color get primaryColor => _primaryColor;
 
   bool get isDarkMode {
     if (_themeMode == ThemeMode.system) {
-      // This is a bit tricky without context, but we can default to false or try to check platform brightness if possible.
-      // For now, let's rely on the explicit modes or assume system follows device.
       return WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark;
     }
     return _themeMode == ThemeMode.dark;
@@ -22,7 +25,9 @@ class ThemeService extends ChangeNotifier {
 
   Future<void> _loadTheme() async {
     final prefs = await SharedPreferences.getInstance();
-    final String? themeStr = prefs.getString(_themeKey);
+    
+    // Load Mode
+    final String? themeStr = prefs.getString(_themeModeKey);
     if (themeStr != null) {
       if (themeStr == 'light') {
         _themeMode = ThemeMode.light;
@@ -31,8 +36,15 @@ class ThemeService extends ChangeNotifier {
       } else {
         _themeMode = ThemeMode.system;
       }
-      notifyListeners();
     }
+
+    // Load Color
+    final int? colorValue = prefs.getInt(_themeColorKey);
+    if (colorValue != null) {
+      _primaryColor = Color(colorValue);
+    }
+    
+    notifyListeners();
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
@@ -42,7 +54,14 @@ class ThemeService extends ChangeNotifier {
     String modeStr = 'system';
     if (mode == ThemeMode.light) modeStr = 'light';
     if (mode == ThemeMode.dark) modeStr = 'dark';
-    await prefs.setString(_themeKey, modeStr);
+    await prefs.setString(_themeModeKey, modeStr);
+  }
+  
+  Future<void> setPrimaryColor(Color color) async {
+    _primaryColor = color;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_themeColorKey, color.value);
   }
 
   void toggleTheme() {

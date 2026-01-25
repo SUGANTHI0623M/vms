@@ -23,6 +23,9 @@ class _VendorsViewState extends State<VendorsView> {
   bool _isLoading = true;
   String _searchQuery = "";
   final TextEditingController _searchController = TextEditingController();
+  
+  // Use filter index instead of TabController for flexibility with "Pills"
+  int _selectedFilterIndex = 0; // 0: All, 1: My Vendors, 2: Verified, 3: Pending
 
   @override
   void initState() {
@@ -52,17 +55,13 @@ class _VendorsViewState extends State<VendorsView> {
           _currentVendorProfile = profile;
           if (visits != null) {
             for (var v in visits) {
-              // Outgoing visits: parsed from purpose
               String p = v['purpose'] ?? '';
               if (p.startsWith("Visiting: ")) {
                 try {
                   String company = p.split("Visiting: ")[1].split(".")[0];
                   _visitedCompanyNames.add(company.toLowerCase().trim());
-                } catch (e) {
-                  // ignore parse error
-                }
+                } catch (e) {}
               }
-              // Incoming visits: capture vendor_id
               if (v['vendor_id'] != null && v['vendor_id'] is int) {
                 _visitorVendorIds.add(v['vendor_id']);
               }
@@ -85,19 +84,50 @@ class _VendorsViewState extends State<VendorsView> {
   void _filterVendors(String query) {
     setState(() {
       _searchQuery = query;
-      _filteredVendors = _allVendors
+    });
+  }
+
+  List<Vendor> _getDisplayedVendors() {
+    // 1. Search Filter
+    List<Vendor> searchResults = _allVendors;
+    if (_searchQuery.isNotEmpty) {
+      searchResults = _allVendors
           .where(
             (v) =>
-                (v.companyName ?? "").toLowerCase().contains(
-                  query.toLowerCase(),
-                ) ||
-                (v.fullName ?? "").toLowerCase().contains(
-                  query.toLowerCase(),
-                ) ||
-                (v.vendorUid ?? "").toLowerCase().contains(query.toLowerCase()),
+                (v.companyName ?? "").toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                (v.fullName ?? "").toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                (v.vendorUid ?? "").toLowerCase().contains(_searchQuery.toLowerCase()),
           )
           .toList();
-    });
+    }
+
+    // 2. Category Filter
+    if (_selectedFilterIndex == 0) {
+      return searchResults; // All
+    } else if (_selectedFilterIndex == 1) {
+      // My Vendors (Visited)
+      return searchResults.where((v) {
+        if (_currentVendorProfile != null && v.id == _currentVendorProfile!['id']) {
+          return false;
+        }
+        bool byName = v.companyName != null &&
+            _visitedCompanyNames.contains(v.companyName!.toLowerCase().trim());
+        bool byId = _visitorVendorIds.contains(v.id);
+        return byName || byId;
+      }).toList();
+    } else if (_selectedFilterIndex == 2) {
+      // Verified
+      return searchResults
+          .where((v) => v.verificationStatus.toUpperCase() == 'VERIFIED')
+          .toList();
+    } else if (_selectedFilterIndex == 3) {
+      // Pending / Not Verified
+      return searchResults
+          .where((v) => v.verificationStatus.toUpperCase() != 'VERIFIED')
+          .toList();
+    }
+    
+    return searchResults;
   }
 
   @override
@@ -107,348 +137,227 @@ class _VendorsViewState extends State<VendorsView> {
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).primaryColor;
+    
+    final displayedVendors = _getDisplayedVendors();
 
-    final myVendors = _filteredVendors.where((v) {
-      // Exclude self
-      if (_currentVendorProfile != null &&
-          v.id == _currentVendorProfile!['id']) {
-        return false;
-      }
-
-      bool byName =
-          v.companyName != null &&
-          _visitedCompanyNames.contains(v.companyName!.toLowerCase().trim());
-      bool byId = _visitorVendorIds.contains(v.id);
-      return byName || byId;
-    }).toList();
-
-    final verifiedVendors = _filteredVendors
-        .where((v) => v.verificationStatus.toUpperCase() == 'VERIFIED')
-        .toList();
-    final pendingVendors = _filteredVendors
-        .where((v) => v.verificationStatus.toUpperCase() != 'VERIFIED')
-        .toList();
-
-    return DefaultTabController(
-      length: 3,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: _filterVendors,
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
-                    decoration: InputDecoration(
-                      hintText: 'Search vendors...',
-                      hintStyle: TextStyle(color: Colors.grey[500]),
-                      prefixIcon: Icon(
-                        Icons.search,
-                        color: Theme.of(context).primaryColor,
-                      ),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _searchController.clear();
-                                _filterVendors("");
-                              },
-                            )
-                          : null,
-                      filled: true,
-                      fillColor: Theme.of(context).cardColor,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(15),
-                        borderSide: isDark ? BorderSide.none : BorderSide(color: Colors.grey.shade200),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(15),
-                        borderSide: isDark ? BorderSide.none : BorderSide(color: Colors.grey.shade200),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: isDark ? Colors.grey[900] : Colors.grey[200],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: TabBar(
-              isScrollable: true,
-              indicator: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                color: isDark ? AppColors.darkPrimary : Colors.white,
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: TextField(
+            controller: _searchController,
+            onChanged: _filterVendors,
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+            decoration: InputDecoration(
+              hintText: 'Search vendors...',
+              hintStyle: TextStyle(color: Colors.grey[600]),
+              prefixIcon: Icon(Icons.search, color: Colors.grey[600]),
+              filled: true,
+              fillColor: isDark ? const Color(0xFF27272A) : Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: isDark ? BorderSide.none : BorderSide(color: Colors.grey.shade300),
               ),
-              indicatorSize: TabBarIndicatorSize.tab,
-              labelColor: isDark ? Colors.black : AppColors.primary,
-              unselectedLabelColor: Colors.grey[600],
-              labelStyle: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
-              tabs: [
-                Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.business_center, size: 16),
-                      const SizedBox(width: 6),
-                      Text('My Vendors (${myVendors.length})'),
-                    ],
-                  ),
-                ),
-                Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.verified, size: 16),
-                      const SizedBox(width: 6),
-                      Text('Verified (${verifiedVendors.length})'),
-                    ],
-                  ),
-                ),
-                Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.pending, size: 16),
-                      const SizedBox(width: 6),
-                      Text('Pending (${pendingVendors.length})'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: Container(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              child: TabBarView(
-                children: [
-                  _buildVendorList(myVendors),
-                  _buildVendorList(verifiedVendors),
-                  _buildVendorList(pendingVendors),
-                ],
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: isDark ? BorderSide.none : BorderSide(color: Colors.grey.shade300),
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVendorList(List<Vendor> vendors) {
-    if (vendors.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search_off, size: 64, color: Colors.grey[300]),
-            const SizedBox(height: 16),
-            Text(
-              _searchQuery.isEmpty
-                  ? 'No vendors in this category'
-                  : 'No matches found',
-              style: TextStyle(color: Colors.grey[600], fontSize: 16),
-            ),
-          ],
         ),
-      );
-    }
+        
+        // Tab Filters (Pill shaped)
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+               _buildFilterChip("All", 0, primaryColor, isDark),
+               const SizedBox(width: 10),
+               _buildFilterChip("My Vendors", 1, primaryColor, isDark), // Was "Filters" in screenshot, mapping to "My Vendors" logic
+               const SizedBox(width: 10),
+               _buildFilterChip("Verified", 2, primaryColor, isDark), // Was "Visitors" in screenshot
+               const SizedBox(width: 10),
+               _buildFilterChip("Pending", 3, primaryColor, isDark), // Was "Vendors" in screenshot
+            ],
+          ),
+        ),
+        
+        const SizedBox(height: 16),
 
-    return ListView.builder(
-      itemCount: vendors.length,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemBuilder: (context, index) {
-        final vendor = vendors[index];
-        return _buildVendorCard(vendor);
-      },
+        Expanded(
+          child: displayedVendors.isEmpty 
+            ? Center(
+                child: Text(
+                  "No vendors found",
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+              )
+            : ListView.builder(
+                itemCount: displayedVendors.length,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemBuilder: (context, index) {
+                  final vendor = displayedVendors[index];
+                  return _buildVendorCard(vendor, isDark, primaryColor);
+                },
+              ),
+        ),
+      ],
+    );
+  }
+  
+  Widget _buildFilterChip(String label, int index, Color primary, bool isDark) {
+    final isSelected = _selectedFilterIndex == index;
+    final bgColor = isSelected ? primary : Colors.transparent;
+    final borderColor = isSelected ? primary : Colors.grey[600]!;
+    // Adjust text color for readability against primary background
+    final textColor = isSelected 
+        ? (ThemeData.estimateBrightnessForColor(primary) == Brightness.dark ? Colors.white : Colors.black)
+        : (isDark ? Colors.grey[400] : Colors.grey[600]);
+        
+    return GestureDetector(
+      onTap: () => setState(() => _selectedFilterIndex = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: borderColor),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: textColor,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
     );
   }
 
-  Widget _buildVendorCard(Vendor vendor) {
-    final bool isVerified =
-        vendor.verificationStatus.toUpperCase() == 'VERIFIED';
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  Widget _buildVendorCard(Vendor vendor, bool isDark, Color primary) {
+    final bool isVerified = vendor.verificationStatus.toUpperCase() == 'VERIFIED';
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => VendorDetailView(vendor: vendor),
           ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF27272A) : Colors.white,
           borderRadius: BorderRadius.circular(20),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => VendorDetailView(vendor: vendor),
-              ),
-            );
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
+          boxShadow: isDark 
+              ? null 
+              : [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                // Logo or Initial
-                Hero(
-                  tag: 'vendor-logo-${vendor.id}',
-                  child: Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: isVerified
-                            ? [Colors.blue[400]!, Colors.blue[700]!]
-                            : [Colors.orange[300]!, Colors.orange[600]!],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(15),
-                      image: vendor.logoUrl != null
-                          ? DecorationImage(
-                              image: NetworkImage(vendor.logoUrl!),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
-                    ),
-                    child: vendor.logoUrl == null
-                        ? Center(
-                            child: Text(
-                              (vendor.companyName ?? "?")[0].toUpperCase(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          )
-                        : null,
-                  ),
+                // Avatar
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: isDark ? const Color(0xFF3F3F46) : Colors.grey[200],
+                  backgroundImage: vendor.logoUrl != null ? NetworkImage(vendor.logoUrl!) : null,
+                  child: vendor.logoUrl == null
+                      ? Text(
+                          (vendor.companyName ?? "?")[0].toUpperCase(),
+                          style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                        )
+                      : null,
                 ),
-                const SizedBox(width: 16),
-                // Details
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              vendor.companyName ?? 'Unnamed Company',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 17,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (isVerified)
-                            Icon(
-                              Icons.verified,
-                              color: isDark ? AppColors.darkPrimary : Colors.blue,
-                              size: 18,
-                            ),
-                        ],
-                      ),
-                      if (vendor.description != null &&
-                          vendor.description!.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            vendor.description!,
-                            style: TextStyle(
-                              color: Colors.grey[500],
-                              fontSize: 12,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      const SizedBox(height: 4),
                       Text(
-                        vendor.fullName ?? 'Contact person not set',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                        vendor.companyName ?? "Unknown Company",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          _buildMiniTag(
-                            icon: Icons.qr_code,
-                            label: vendor.vendorUid ?? 'No ID',
-                            color: isDark ? Colors.grey[800]! : Colors.grey[100]!,
-                            textColor: isDark ? Colors.grey[400]! : Colors.grey[700]!,
-                          ),
-                          const SizedBox(width: 8),
-                          _buildMiniTag(
-                            icon: Icons.phone,
-                            label: vendor.phoneNumber ?? 'No Phone',
-                            color: isDark ? Colors.grey[800]! : Colors.grey[100]!,
-                            textColor: isDark ? Colors.grey[400]! : Colors.grey[700]!,
-                          ),
-                        ],
+                      Text(
+                        vendor.fullName ?? "Contact not set",
+                        style: TextStyle(
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                Icon(Icons.chevron_right, color: Colors.grey[400]),
+                if (isVerified)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: primary,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                         Icon(
+                           Icons.check_circle, 
+                           size: 14, 
+                           color: ThemeData.estimateBrightnessForColor(primary) == Brightness.dark ? Colors.white : Colors.black
+                         ),
+                         const SizedBox(width: 4),
+                         Text(
+                           "Verified",
+                           style: TextStyle(
+                             color: ThemeData.estimateBrightnessForColor(primary) == Brightness.dark ? Colors.white : Colors.black,
+                             fontSize: 12,
+                             fontWeight: FontWeight.bold,
+                           ),
+                         ),
+                      ],
+                    ),
+                  ),
               ],
             ),
-          ),
+            const SizedBox(height: 16),
+            const Divider(color: Colors.grey, height: 1),
+            const SizedBox(height: 16),
+            
+            _buildInfoRow(Icons.location_on_outlined, vendor.officeAddress ?? "No Address", isDark),
+            const SizedBox(height: 8),
+            _buildInfoRow(Icons.email_outlined, vendor.email ?? "No Email", isDark),
+            const SizedBox(height: 8),
+            _buildInfoRow(Icons.phone_outlined, vendor.phoneNumber ?? "No Phone", isDark),
+          ],
         ),
       ),
     );
   }
-
-  Widget _buildMiniTag({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required Color textColor,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: textColor),
-          const SizedBox(width: 4),
-          Text(
-            label,
+  
+  Widget _buildInfoRow(IconData icon, String text, bool isDark) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: isDark ? Colors.grey[500] : Colors.grey[600]),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
             style: TextStyle(
-              color: textColor,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
+              color: isDark ? Colors.grey[400] : Colors.grey[700],
+              fontSize: 13,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

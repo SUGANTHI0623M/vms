@@ -4,9 +4,6 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/auth_service.dart';
 import '../../services/vendor_service.dart';
-import '../../core/theme/app_colors.dart';
-import '../../widgets/app_common_widgets.dart';
-import '../verification/verification_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -19,7 +16,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoading = true;
   Map<String, dynamic>? _vendorProfile;
   List<dynamic> _documents = [];
+  int _selectedTabIndex = 1; // 0: Company Details, 1: Documents
   bool _isUploading = false;
+
+  final List<String> _mandatoryDocTypes = [
+    'LOGO',
+    'COMPANY_PROOF',
+    'AADHAR_CARD',
+    'PAN_CARD'
+  ];
 
   @override
   void initState() {
@@ -40,481 +45,740 @@ class _ProfileScreenState extends State<ProfileScreen> {
         service.getDocuments(),
       ]);
 
-      final profile = results[0] as Map<String, dynamic>?;
-      final docs = results[1] as List<dynamic>?;
-
       if (mounted) {
-        final List<dynamic> processedDocs = [];
-        if (docs != null) {
-          // Keep mandatory ones unique, allow multiple OTHER
-          final Map<String, dynamic> mandatoryDocs = {};
-          for (var doc in docs) {
-            final type = doc['document_type'] ?? 'OTHER';
-            if (type == 'AADHAR' || type == 'PAN') {
-              mandatoryDocs[type] = doc;
-            } else {
-              processedDocs.add(doc);
-            }
+        final profile = results[0] as Map<String, dynamic>?;
+        final isVerified = profile?['verification_status'] == 'VERIFIED';
+        
+        // Fetch QR code if verified
+        if (isVerified && profile != null) {
+          final qrCodeData = await service.getQrCode();
+          if (qrCodeData != null && mounted) {
+            profile['qr_code_image_url'] = qrCodeData['qr_code_image_url'];
+            profile['qr_code_data'] = qrCodeData['qr_code_data'];
           }
-          processedDocs.addAll(mandatoryDocs.values);
         }
-
+        
         setState(() {
           _vendorProfile = profile;
-          _documents = processedDocs;
+          _documents = results[1] as List<dynamic>? ?? [];
           _isLoading = false;
         });
       }
     } catch (e) {
-      debugPrint('Error fetching profile data: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _pickAndUploadDocument() async {
-    // Show dialog to select type
-    String? type = await showDialog<String>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Select Document Type'),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'AADHAR'),
-            child: const Text('Aadhar Card'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'PAN'),
-            child: const Text('PAN Card'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'OTHER'),
-            child: const Text('Other'),
-          ),
-        ],
-      ),
-    );
-
-    if (type == null) return;
-
-    String finalType = type;
-    if (type == 'OTHER') {
-      final nameController = TextEditingController();
-      final customName = await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Document Name'),
-          content: TextField(
-            controller: nameController,
-            decoration: const InputDecoration(
-              hintText: 'Enter document name (e.g. MSME)',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, nameController.text),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
+  Map<String, dynamic>? _getDocByType(String type) {
+    try {
+      return _documents.firstWhere(
+        (d) => (d['document_type'] ?? '').toString().toUpperCase() == type.toUpperCase(),
+        orElse: () => null,
       );
-      if (customName == null || customName.isEmpty) return;
-      finalType = customName;
+    } catch (_) {
+      return null;
     }
-
-    FilePickerResult? result = await FilePicker.platform.pickFiles();
-    if (result == null) return;
-
-    setState(() => _isUploading = true);
-    final token = context.read<AuthService>().token!;
-    final service = VendorService(token);
-
-    final success = await service.uploadDocument(
-      finalType,
-      result.files.single.path!,
-    );
-
-    setState(() => _isUploading = false);
-
-    if (success) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Document uploaded successfully')),
-        );
-        _fetchData(); // Refresh list
-      }
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to upload document')),
-        );
-      }
-    }
-  }
-
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Could not open file')));
-      }
-    }
-  }
-
-  Widget _buildDetailRow(String label, String? value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(value ?? '--', style: const TextStyle(fontSize: 16)),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        appBar: CommonAppBar(title: 'My Profile'),
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return Scaffold(
-      appBar: CommonAppBar(title: 'My Profile', onRefresh: _fetchData),
-      body: DefaultTabController(
-        length: 2,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header with Profile Picture
-              _buildProfileHeader(),
-              const SizedBox(height: 24),
+    // Default values if data is missing
+    final name = _vendorProfile?['full_name'] ?? 'Test User 5';
+    final companyName = _vendorProfile?['company_name'] ?? 'Test User 5 Co';
+    final industry = _vendorProfile?['industry'] ?? 'Food Business';
+    final isVerified = _vendorProfile?['verification_status'] == 'VERIFIED';
+    
+    // Personal Details
+    final email = _vendorProfile?['email'] ?? 'test5@gmail.com';
+    final phone = _vendorProfile?['phone_number'] ?? '9000000005';
+    final vendorId = _vendorProfile?['id']?.toString() ?? _vendorProfile?['vendor_id'] ?? '9B7DACA7';
+    final dob = _vendorProfile?['dob'] ?? '18/01/2011';
+    final gender = _vendorProfile?['gender'] ?? 'Female';
+    
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).primaryColor;
+    
+    // Logo logic: "what uploaded in logo show in profile"
+    final logoDoc = _getDocByType('LOGO');
+    final logoUrl = logoDoc?['file_url'] ?? logoDoc?['url'] ?? _vendorProfile?['logo_url'];
 
-              // Personal Details Section
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: primaryColor),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(
+          'My Profile',
+          style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // Header Section
+            Container(
+              color: primaryColor.withOpacity(0.1),
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+              child: Row(
                 children: [
-                  const Text(
-                    'Personal Details',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  // Profile Image
+                  Stack(
+                    children: [
+                      Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Theme.of(context).cardColor, width: 3),
+                          image: DecorationImage(
+                            image: logoUrl != null 
+                                ? NetworkImage(logoUrl) 
+                                : const AssetImage('assets/images/placeholder_avatar.png') as ImageProvider,
+                            fit: BoxFit.cover,
+                            onError: (_, __) {},
+                          ),
+                          color: Colors.grey[300],
+                        ),
+                        child: logoUrl == null 
+                            ? const Icon(Icons.person, size: 50, color: Colors.grey) 
+                            : null,
+                      ),
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: InkWell(
+                          onTap: () => _uploadDocument('LOGO'),
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: primaryColor,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.camera_alt, color: Colors.white, size: 14),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.edit, color: AppColors.primary),
-                    onPressed: () => _navigateToEdit(0),
+                  const SizedBox(width: 16),
+                  // Name and Company Info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          companyName,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: primaryColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          industry,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (isVerified)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.green),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(Icons.check_circle, size: 14, color: Colors.green),
+                                SizedBox(width: 4),
+                                Text(
+                                  'VERIFIED',
+                                  style: TextStyle(
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-              const Divider(),
-              _buildDetailRow('Email', _vendorProfile?['email']),
-              _buildDetailRow('Phone', _vendorProfile?['phone_number']),
-              _buildDetailRow('Vendor ID', _vendorProfile?['vendor_uid']),
-              _buildDetailRow('DOB', _vendorProfile?['dob']),
-              _buildDetailRow('Gender', _vendorProfile?['gender']),
+            ),
 
-              const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
-              // Switching Tabs
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: TabBar(
-                  indicator: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    color: Colors.white,
+            // Personal Details Section
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Personal Details',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.edit, color: primaryColor, size: 20),
+                        onPressed: _showEditPersonalDetails,
+                      ),
+                    ],
                   ),
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  labelColor: AppColors.primary,
-                  unselectedLabelColor: Colors.grey[600],
-                  labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-                  tabs: const [
-                    Tab(text: 'Company Details'),
-                    Tab(text: 'Documents'),
+                  _buildDetailRow('Email', email, isDark),
+                  _buildDetailRow('Phone', phone, isDark),
+                  _buildDetailRow('Vendor ID', vendorId, isDark),
+                  _buildDetailRow('DOB', dob, isDark),
+                  _buildDetailRow('Gender', gender, isDark),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Tabs
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Expanded(child: _buildTabButton('Company Details', 0, primaryColor, isDark)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildTabButton('Documents', 1, primaryColor, isDark)),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Tab Content
+            if (_selectedTabIndex == 1) ...[
+              // DOCUMENTS TAB
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Verification Documents',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    // Optional: could add a generic upload button if needed, but per-row is better
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 400, // Fixed height for TabBarView in ScrollView
-                child: TabBarView(
-                  children: [_buildCompanyTab(), _buildDocumentsTab()],
+              const SizedBox(height: 12),
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: _mandatoryDocTypes.length,
+                separatorBuilder: (ctx, index) => const SizedBox(height: 12),
+                itemBuilder: (ctx, index) {
+                  final type = _mandatoryDocTypes[index];
+                  // Map display names
+                  String displayName;
+                  switch (type) {
+                    case 'LOGO': displayName = 'Profile Photo (Logo)'; break;
+                    case 'COMPANY_PROOF': displayName = 'Company Proof'; break;
+                    case 'AADHAR_CARD': displayName = 'Aadhar Card'; break;
+                    case 'PAN_CARD': displayName = 'PAN Card'; break;
+                    default: displayName = type;
+                  }
+                  
+                  return _buildDocumentRow(displayName, type, isDark);
+                },
+              ),
+            ] else ...[
+              // COMPANY DETAILS TAB
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Company Information',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.edit, color: primaryColor, size: 20),
+                          onPressed: _showEditCompanyDetails,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDetailRow('Company Name', companyName, isDark),
+                    _buildDetailRow('Industry', industry, isDark),
+                    _buildDetailRow('Address', _vendorProfile?['address'] ?? 'Not Provided', isDark),
+                    _buildDetailRow('City', _vendorProfile?['city'] ?? 'Not Provided', isDark),
+                    _buildDetailRow('State', _vendorProfile?['state'] ?? 'Not Provided', isDark),
+                    _buildDetailRow('Pincode', _vendorProfile?['pincode'] ?? 'Not Provided', isDark),
+                    const SizedBox(height: 24),
+                    // QR Code Section
+                    if (isVerified) _buildQrCodeSection(isDark, primaryColor),
+                  ],
                 ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProfileHeader() {
-    return Row(
-      children: [
-        Stack(
-          children: [
-            CircleAvatar(
-              radius: 45,
-              backgroundColor: AppColors.primary.withOpacity(0.1),
-              backgroundImage: (_vendorProfile?['logo_url'] != null)
-                  ? NetworkImage(_vendorProfile!['logo_url'])
-                  : null,
-              child: (_vendorProfile?['logo_url'] == null)
-                  ? const Icon(Icons.person, size: 55, color: AppColors.primary)
-                  : null,
-            ),
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.camera_alt,
-                  size: 16,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(width: 20),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _vendorProfile?['full_name'] ?? 'Vendor User',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (_vendorProfile?['company_name'] != null)
-                Text(
-                  _vendorProfile!['company_name'],
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
+            
+            const SizedBox(height: 40),
+            if (_isUploading)
+              Container(
+                color: Colors.black54,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      CircularProgressIndicator(color: Colors.white),
+                      SizedBox(height: 16),
+                      Text(
+                        "Uploading Document...",
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
                 ),
-              if (_vendorProfile?['description'] != null)
-                Text(
-                  _vendorProfile!['description'],
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              const SizedBox(height: 8),
-              _buildStatusBadge(),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatusBadge() {
-    final status = _vendorProfile?['verification_status'] ?? 'PENDING';
-    final isVerified = status == 'VERIFIED';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: isVerified
-            ? AppColors.success.withOpacity(0.1)
-            : AppColors.warning.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isVerified
-              ? AppColors.success.withOpacity(0.3)
-              : AppColors.warning.withOpacity(0.3),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isVerified ? Icons.verified : Icons.pending,
-            size: 14,
-            color: isVerified ? AppColors.success : AppColors.warning,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            status,
-            style: TextStyle(
-              fontSize: 12,
-              color: isVerified ? AppColors.success : AppColors.warning,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCompanyTab() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Business Information',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              IconButton(
-                icon: const Icon(
-                  Icons.edit,
-                  color: AppColors.primary,
-                  size: 20,
-                ),
-                onPressed: () => _navigateToEdit(1),
-              ),
-            ],
-          ),
-          const Divider(),
-          _buildDetailRow('Company', _vendorProfile?['company_name']),
-          _buildDetailRow('Website', _vendorProfile?['website']),
-          _buildDetailRow('GSTIN', _vendorProfile?['gstin']),
-          _buildDetailRow('Address', _vendorProfile?['office_address']),
-          _buildDetailRow('Description', _vendorProfile?['description']),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDocumentsTab() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'Verification Documents',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            IconButton(
-              icon: _isUploading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(
-                      Icons.upload_file,
-                      color: AppColors.primary,
-                      size: 20,
-                    ),
-              onPressed: _isUploading ? null : _pickAndUploadDocument,
-            ),
           ],
         ),
-        const Divider(),
-        if (_documents.isEmpty)
-          const Expanded(
-            child: Center(
+      ),
+    );
+  }
+
+  Widget _buildDocumentRow(String title, String type, bool isDark) {
+    final doc = _getDocByType(type);
+    final isUploaded = doc != null;
+    final uploadedAt = doc?['uploaded_at'] ?? 'Just now';
+    final primaryColor = Theme.of(context).primaryColor;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF27272A) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: isDark 
+            ? null 
+            : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 5,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+        border: isUploaded ? null : Border.all(color: Colors.red.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isUploaded ? primaryColor.withOpacity(0.1) : Colors.red[50],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              isUploaded ? Icons.description : Icons.warning_amber_rounded,
+              color: isUploaded ? primaryColor : Colors.red,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isUploaded ? 'Uploaded at: $uploadedAt' : 'Missing (Mandatory)',
+                  style: TextStyle(
+                    color: isUploaded ? (isDark ? Colors.grey[400] : Colors.grey[600]) : Colors.red,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isUploaded)
+            TextButton(
+              onPressed: () async {
+                 final url = doc['file_url'] ?? doc['url'];
+                 if (url != null) {
+                   await launchUrl(Uri.parse(url));
+                 }
+              },
+              child: Text('VIEW', style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
+            ),
+          IconButton(
+            icon: Icon(isUploaded ? Icons.edit : Icons.upload_file, color: primaryColor),
+            onPressed: () => _uploadDocument(type),
+            tooltip: isUploaded ? 'Replace' : 'Upload',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _uploadDocument(String type) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+      );
+
+      if (result != null && result.files.single.path != null) {
+        setState(() => _isUploading = true);
+        final token = context.read<AuthService>().token;
+        if (token != null) {
+          final service = VendorService(token);
+          final success = await service.uploadDocument(type, result.files.single.path!);
+          
+          if (success) {
+            await _fetchData();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Document uploaded successfully')),
+              );
+            }
+          } else {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Failed to upload document')),
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Upload error: $e');
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  Future<void> _showEditPersonalDetails() async {
+    final nameCtrl = TextEditingController(text: _vendorProfile?['full_name']);
+    final emailCtrl = TextEditingController(text: _vendorProfile?['email']);
+    final phoneCtrl = TextEditingController(text: _vendorProfile?['phone_number']);
+    final dobCtrl = TextEditingController(text: _vendorProfile?['dob']);
+    final genderCtrl = TextEditingController(text: _vendorProfile?['gender']);
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Personal Details'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Full Name')),
+              TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email')),
+              TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Phone')),
+              TextField(controller: dobCtrl, decoration: const InputDecoration(labelText: 'DOB (DD/MM/YYYY)')),
+              TextField(controller: genderCtrl, decoration: const InputDecoration(labelText: 'Gender')),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _updateProfile({
+                'full_name': nameCtrl.text,
+                'email': emailCtrl.text,
+                'phone_number': phoneCtrl.text,
+                'dob': dobCtrl.text,
+                'gender': genderCtrl.text,
+              });
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEditCompanyDetails() async {
+    final companyNameCtrl = TextEditingController(text: _vendorProfile?['company_name']);
+    final industryCtrl = TextEditingController(text: _vendorProfile?['industry']);
+    final addressCtrl = TextEditingController(text: _vendorProfile?['address']);
+    final cityCtrl = TextEditingController(text: _vendorProfile?['city']);
+    final stateCtrl = TextEditingController(text: _vendorProfile?['state']);
+    final pincodeCtrl = TextEditingController(text: _vendorProfile?['pincode']);
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Company Details'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: companyNameCtrl, decoration: const InputDecoration(labelText: 'Company Name')),
+              TextField(controller: industryCtrl, decoration: const InputDecoration(labelText: 'Industry')),
+              TextField(controller: addressCtrl, decoration: const InputDecoration(labelText: 'Address')),
+              TextField(controller: cityCtrl, decoration: const InputDecoration(labelText: 'City')),
+              TextField(controller: stateCtrl, decoration: const InputDecoration(labelText: 'State')),
+              TextField(controller: pincodeCtrl, decoration: const InputDecoration(labelText: 'Pincode')),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _updateProfile({
+                'company_name': companyNameCtrl.text,
+                'industry': industryCtrl.text,
+                'address': addressCtrl.text,
+                'city': cityCtrl.text,
+                'state': stateCtrl.text,
+                'pincode': pincodeCtrl.text,
+              });
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _updateProfile(Map<String, dynamic> data) async {
+    setState(() => _isLoading = true);
+    final token = context.read<AuthService>().token;
+    if (token == null) return;
+
+    final service = VendorService(token);
+    // Filter out null/empty values if needed, but API usually handles partial updates if PATCH, 
+    // but here we are sending what was edited.
+    // If updateVendor expects all fields, we might need to merge with existing.
+    // Assuming API handles partial updates or we should merge.
+    final currentData = _vendorProfile ?? {};
+    final updatedData = {...currentData, ...data};
+    
+    final success = await service.updateVendor(updatedData);
+    
+    if (success) {
+      await _fetchData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile updated successfully')),
+        );
+      }
+    } else {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to update profile')),
+        );
+      }
+    }
+  }
+
+  Widget _buildDetailRow(String label, String value, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isDark ? Colors.grey[400] : Colors.grey[500],
+                fontSize: 14,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: isDark ? Colors.white : Colors.black87,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQrCodeSection(bool isDark, Color primaryColor) {
+    final qrCodeUrl = _vendorProfile?['qr_code_image_url'];
+    final isVerified = _vendorProfile?['verification_status'] == 'VERIFIED';
+    
+    if (!isVerified) {
+      return const SizedBox.shrink();
+    }
+    
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF27272A) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: isDark 
+            ? null 
+            : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 5,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+      ),
+      child: Column(
+        children: [
+          Text(
+            'Company QR Code',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (qrCodeUrl != null && qrCodeUrl.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: primaryColor.withOpacity(0.3)),
+              ),
+              child: Image.network(
+                qrCodeUrl,
+                width: 250,
+                height: 250,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    width: 250,
+                    height: 250,
+                    color: Colors.grey[300],
+                    child: const Icon(Icons.error, size: 50),
+                  );
+                },
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(20),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.folder_open, size: 48, color: Colors.grey),
-                  SizedBox(height: 12),
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
                   Text(
-                    'No documents uploaded yet',
-                    style: TextStyle(color: Colors.grey),
+                    'Generating QR Code...',
+                    style: TextStyle(
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    ),
                   ),
                 ],
               ),
             ),
-          )
-        else
-          Expanded(
-            child: ListView.builder(
-              itemCount: _documents.length,
-              itemBuilder: (context, index) {
-                final doc = _documents[index];
-                return _buildDocCard(doc);
-              },
+          const SizedBox(height: 16),
+          Text(
+            'Scan this QR code to check in at this company',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildDocCard(Map<String, dynamic> doc) {
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey[200]!),
-      ),
-      child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
+  Widget _buildTabButton(String title, int index, Color primaryColor, bool isDark) {
+    final isSelected = _selectedTabIndex == index;
+    // For selected tab:
+    // If dark mode: primary color background, black/white text depending on primary color contrast
+    // If light mode: white background, primary color text
+    // BUT user said: "download all text is in blue color change as primary colr text according to theme"
+    
+    // Let's stick to standard tab look:
+    // Selected: Primary Color BG, White text (if dark primary) or Black text (if light primary)
+    // Unselected: Surface color (grey/white), Grey text
+    
+    return GestureDetector(
+      onTap: () => setState(() => _selectedTabIndex = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected 
+              ? (isDark ? primaryColor : Colors.white) 
+              : (isDark ? Colors.grey[800] : Colors.grey[200]),
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: isSelected ? [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ] : null,
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          title,
+          style: TextStyle(
+            color: isSelected 
+                ? (isDark ? Colors.white : primaryColor)
+                : Colors.grey[600],
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
           ),
-          child: const Icon(Icons.description, color: AppColors.primary),
-        ),
-        title: Text(
-          doc['document_type'] == 'AADHAR'
-              ? 'Aadhar Card'
-              : (doc['document_type'] == 'PAN'
-                    ? 'PAN Card'
-                    : (doc['document_type'] ?? 'Unknown')),
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          'Uploaded at: ${doc['id']}',
-        ), // Could show date if available
-        trailing: TextButton(
-          onPressed: () => _launchUrl(doc['file_url']),
-          child: const Text('VIEW'),
         ),
       ),
     );
-  }
-
-  void _navigateToEdit(int step) async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            VerificationScreen(initialStep: step, isSingleStep: true),
-      ),
-    );
-    if (result == true) {
-      _fetchData();
-    }
   }
 }

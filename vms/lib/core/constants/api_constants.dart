@@ -1,6 +1,7 @@
 class ApiConstants {
-  static const String baseUrl = 'https://vms-zeta.vercel.app/api/v1';
- // static const String baseUrl = 'http://10.78.114.36:8000/api/v1';
+  //static const String baseUrl = 'https://vms-zeta.vercel.app/api/v1';
+ 
+ static const String baseUrl = 'http://10.78.114.36:8000/api/v1';
 
   static const String login = '/auth/login';
 
@@ -23,4 +24,8 @@ class ApiConstants {
   static const String pendingVisits = '/visits/pending';
 
   static const String uploadDoc = '/documents/upload';
+  
+  // QR Code
+  static const String vendorQrCode = '/vendors/me/qr-code';
+  static const String scanQrCode = '/vendors/scan-qr-code';
 }

@@ -16,13 +16,12 @@ class AppDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final email = vendorProfile?['email'] ?? 'Vendor';
-    final uid =
-        vendorProfile?['vendor_uid'] ??
-        vendorProfile?['id']?.toString() ??
-        '...';
+    final uid = vendorProfile?['id']?.toString() ?? vendorProfile?['vendor_id'] ?? 'N/A';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).primaryColor;
 
     return Drawer(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: isDark ? Colors.black : Colors.white,
       child: Column(
         children: [
           Expanded(
@@ -40,8 +39,8 @@ class AppDrawer extends StatelessWidget {
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        Theme.of(context).primaryColor,
-                        Theme.of(context).primaryColor.withOpacity(0.8),
+                        primaryColor,
+                        primaryColor.withOpacity(0.8),
                       ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
@@ -65,7 +64,7 @@ class AppDrawer extends StatelessWidget {
                           child: Icon(
                             Icons.person,
                             size: 45,
-                            color: Theme.of(context).primaryColor,
+                            color: primaryColor,
                           ),
                         ),
                       ),
@@ -104,8 +103,8 @@ class AppDrawer extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 ListTile(
-                  leading: const Icon(Icons.home),
-                  title: const Text('Home'),
+                  leading: Icon(Icons.home, color: isDark ? Colors.white : Colors.black87),
+                  title: Text('Home', style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontWeight: FontWeight.w600)),
                   onTap: () {
                     Navigator.pushAndRemoveUntil(
                       context,
@@ -117,8 +116,8 @@ class AppDrawer extends StatelessWidget {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.person),
-                  title: const Text('Profile'),
+                  leading: Icon(Icons.person, color: isDark ? Colors.white : Colors.black87),
+                  title: Text('Profile', style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontWeight: FontWeight.w600)),
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(
@@ -131,8 +130,8 @@ class AppDrawer extends StatelessWidget {
                 ),
                 if (vendorProfile?['verification_status'] != 'VERIFIED')
                   ListTile(
-                    leading: const Icon(Icons.verified_user),
-                    title: const Text('Get Verified'),
+                    leading: Icon(Icons.verified_user, color: isDark ? Colors.white : Colors.black87),
+                    title: Text('Get Verified', style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontWeight: FontWeight.w600)),
                     onTap: () async {
                       Navigator.pop(context);
                       final result = await Navigator.push(
@@ -177,24 +176,18 @@ class CommonAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // final isDark = Theme.of(context).brightness == Brightness.dark;
     
     return AppBar(
       title: Text(
         title,
-        style: TextStyle(
+        style: const TextStyle(
           fontWeight: FontWeight.bold, 
           fontSize: 18,
-          color: isDark ? AppColors.darkTextPrimary : AppColors.primary,
         ),
       ),
       elevation: 0,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      foregroundColor: isDark ? AppColors.darkTextPrimary : AppColors.primary,
       centerTitle: true,
-      iconTheme: IconThemeData(
-        color: isDark ? AppColors.darkTextPrimary : AppColors.primary,
-      ),
       actions: [
         if (verificationStatus != null)
           GestureDetector(

@@ -128,4 +128,40 @@ class VendorService {
       return false;
     }
   }
+
+  Future<Map<String, dynamic>?> getQrCode() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConstants.baseUrl}${ApiConstants.vendorQrCode}'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Get QR code error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> scanQrCode(String qrData) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConstants.baseUrl}${ApiConstants.scanQrCode}'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({'qr_data': qrData}),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Scan QR code error: $e');
+      return null;
+    }
+  }
 }
