@@ -4,7 +4,7 @@ from app.models.vendor import Vendor
 from app.models.otp import OTP
 from app.schemas.user import UserCreate
 from app.core import security
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 def get_user_by_email(db: Session, email: str):
     return db.query(User).filter(User.email == email).first()
@@ -17,7 +17,7 @@ def create_otp(db: Session, identifier: str, purpose: str):
     db.query(OTP).filter(OTP.identifier == identifier, OTP.purpose == purpose).delete()
     
     code = OTP.generate_code()
-    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
     db_otp = OTP(identifier=identifier, code=code, purpose=purpose, expires_at=expires_at)
     db.add(db_otp)
     db.commit()
@@ -28,7 +28,7 @@ def verify_otp(db: Session, identifier: str, code: str, purpose: str):
         OTP.identifier == identifier,
         OTP.code == code,
         OTP.purpose == purpose,
-        OTP.expires_at > datetime.utcnow()
+        OTP.expires_at > datetime.now(timezone.utc)
     ).first()
     if otp:
         db.delete(otp)

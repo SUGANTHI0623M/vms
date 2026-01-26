@@ -26,7 +26,15 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     
     user = db.query(User).filter(User.email == token_data.email).first()
     if user is None:
+        print(f"ERROR: User not found for email from token: {token_data.email}")
         raise credentials_exception
+    
+    # Verify token email matches user email
+    if user.email.lower() != token_data.email.lower():
+        print(f"ERROR: Token email ({token_data.email}) doesn't match user email ({user.email})")
+        raise credentials_exception
+    
+    print(f"DEBUG auth: Authenticated user ID: {user.id}, Email: {user.email}, Name: {user.full_name}")
     return user
 
 def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:

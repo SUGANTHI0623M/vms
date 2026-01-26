@@ -1,5 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from typing import Optional, List
+from datetime import datetime
 from .document import DocumentResponse
 
 class VendorBase(BaseModel):
@@ -23,6 +24,15 @@ class VendorResponse(VendorBase):
     vendor_uid: Optional[str] = None
     email: Optional[str] = None
     full_name: Optional[str] = None
+    qr_code_data: Optional[str] = None
+    qr_code_image_url: Optional[str] = None
+    qr_code_generated_at: Optional[datetime] = None
+    
+    @field_serializer('qr_code_generated_at')
+    def serialize_datetime(self, value: Optional[datetime], _info) -> Optional[str]:
+        if value is None:
+            return None
+        return value.isoformat()
     
     class Config:
         from_attributes = True

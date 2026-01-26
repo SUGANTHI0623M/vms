@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Enum, Text
+from sqlalchemy import Column, Integer, String, ForeignKey, Enum, Text, DateTime
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from app.core.database import Base
 import enum
 
@@ -28,6 +29,13 @@ class Vendor(Base):
     gstin = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     logo_url = Column(String, nullable=True)
+    
+    # QR Code fields (added via migration)
+    # Note: If migration hasn't run, these will cause errors
+    # Run: python check_and_fix_qr_columns.py or alembic upgrade head
+    qr_code_data = Column(Text, nullable=True)  # JSON string with company details
+    qr_code_image_url = Column(String, nullable=True)  # URL to QR code image
+    qr_code_generated_at = Column(DateTime(timezone=True), nullable=True)
     
     user = relationship("User", backref="vendor_profile")
     documents = relationship("Document", back_populates="vendor")

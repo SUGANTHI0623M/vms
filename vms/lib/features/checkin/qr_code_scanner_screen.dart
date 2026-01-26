@@ -10,29 +10,11 @@ class QrCodeScannerScreen extends StatefulWidget {
 
 class _QrCodeScannerScreenState extends State<QrCodeScannerScreen> {
   final MobileScannerController controller = MobileScannerController();
-  bool _torchEnabled = false;
-  CameraFacing _cameraFacing = CameraFacing.back;
 
   @override
   void dispose() {
     controller.dispose();
     super.dispose();
-  }
-
-  void _toggleTorch() {
-    setState(() {
-      _torchEnabled = !_torchEnabled;
-    });
-    controller.toggleTorch();
-  }
-
-  void _switchCamera() {
-    setState(() {
-      _cameraFacing = _cameraFacing == CameraFacing.back 
-          ? CameraFacing.front 
-          : CameraFacing.back;
-    });
-    controller.switchCamera();
   }
 
   @override
@@ -43,21 +25,37 @@ class _QrCodeScannerScreenState extends State<QrCodeScannerScreen> {
         backgroundColor: Colors.black,
         actions: [
           IconButton(
-            icon: Icon(
-              _torchEnabled ? Icons.flash_on : Icons.flash_off,
-              color: _torchEnabled ? Colors.yellow : Colors.white,
+            icon: ValueListenableBuilder<MobileScannerState>(
+              valueListenable: controller,
+              builder: (context, state, child) {
+                switch (state.torchState) {
+                  case TorchState.off:
+                    return const Icon(Icons.flash_off, color: Colors.grey);
+                  case TorchState.on:
+                    return const Icon(Icons.flash_on, color: Colors.yellow);
+                  case TorchState.auto:
+                    return const Icon(Icons.flash_auto, color: Colors.blue);
+                  case TorchState.unavailable:
+                    return const Icon(Icons.flash_off, color: Colors.grey);
+                }
+              },
             ),
-            onPressed: _toggleTorch,
+            onPressed: () => controller.toggleTorch(),
             tooltip: 'Toggle Flash',
           ),
           IconButton(
-            icon: Icon(
-              _cameraFacing == CameraFacing.back 
-                  ? Icons.camera_rear 
-                  : Icons.camera_front,
-              color: Colors.white,
+            icon: ValueListenableBuilder<MobileScannerState>(
+              valueListenable: controller,
+              builder: (context, state, child) {
+                switch (state.cameraDirection) {
+                  case CameraFacing.front:
+                    return const Icon(Icons.camera_front);
+                  case CameraFacing.back:
+                    return const Icon(Icons.camera_rear);
+                }
+              },
             ),
-            onPressed: _switchCamera,
+            onPressed: () => controller.switchCamera(),
             tooltip: 'Switch Camera',
           ),
         ],

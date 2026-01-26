@@ -15,3 +15,4 @@ class DocumentResponse(DocumentBase):
     
     class Config:
         from_attributes = True
+        # Exclude relationships to avoid lazy loading issues

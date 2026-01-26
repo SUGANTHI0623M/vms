@@ -33,14 +33,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _loadProfile() async {
     final authService = context.read<AuthService>();
     if (authService.token != null) {
+      print('Dashboard: Loading profile for token: ${authService.token!.substring(0, 20)}...');
       final vendorService = VendorService(authService.token!);
       final profile = await vendorService.getVendorProfile();
       if (mounted) {
+        print('Dashboard: Profile loaded - ID: ${profile?['id']}, Email: ${profile?['email']}, Company: ${profile?['company_name']}');
         setState(() {
           _vendorProfile = profile;
           _isLoading = false;
           // Force refresh of children views by updating key
           _viewKey = UniqueKey();
+        });
+      }
+    } else {
+      print('Dashboard: No token available');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
         });
       }
     }

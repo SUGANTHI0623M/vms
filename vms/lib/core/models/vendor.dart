@@ -34,13 +34,29 @@ class Vendor {
   });
 
   factory Vendor.fromJson(Map<String, dynamic> json) {
+    // Handle verification_status - ensure it's a string
+    String verificationStatus = 'PENDING';
+    if (json['verification_status'] != null) {
+      final status = json['verification_status'];
+      if (status is String) {
+        verificationStatus = status;
+      } else {
+        // If it's an enum or object, convert to string
+        verificationStatus = status.toString().toUpperCase();
+        // Remove enum prefix if present (e.g., "VerificationStatus.VERIFIED" -> "VERIFIED")
+        if (verificationStatus.contains('.')) {
+          verificationStatus = verificationStatus.split('.').last;
+        }
+      }
+    }
+    
     return Vendor(
       id: json['id'],
       userId: json['user_id'],
       phoneNumber: json['phone_number'],
       companyName: json['company_name'],
       officeAddress: json['office_address'],
-      verificationStatus: json['verification_status'],
+      verificationStatus: verificationStatus,
       vendorUid: json['vendor_uid'],
       dob: json['dob'],
       gender: json['gender'],

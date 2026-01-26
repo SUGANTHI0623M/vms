@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, DateTime
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from app.core.database import Base
-from datetime import datetime
 
 class SOCProfile(Base):
     __tablename__ = "soc_profiles"
@@ -19,6 +19,6 @@ class SOCProfile(Base):
     photo_url = Column(String, nullable=True)
     gov_id_url = Column(String, nullable=True)
     is_verified = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", backref="soc_profile")

@@ -25,13 +25,19 @@ class VendorService {
 
   Future<Map<String, dynamic>?> getVendorProfile() async {
     try {
+      print('Fetching vendor profile with token: ${token.substring(0, 20)}...');
       final response = await http.get(
         Uri.parse('${ApiConstants.baseUrl}${ApiConstants.vendorMe}'),
         headers: {'Authorization': 'Bearer $token'},
       );
 
+      print('Vendor profile response status: ${response.statusCode}');
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        final profile = json.decode(response.body);
+        print('Vendor profile received - ID: ${profile['id']}, Email: ${profile['email']}, Company: ${profile['company_name']}');
+        return profile;
+      } else {
+        print('Vendor profile error: ${response.statusCode} - ${response.body}');
       }
       return null;
     } catch (e) {
@@ -46,8 +52,16 @@ class VendorService {
         Uri.parse('${ApiConstants.baseUrl}/documents/'),
         headers: {'Authorization': 'Bearer $token'},
       );
+      print('Get documents response status: ${response.statusCode}');
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        final docs = json.decode(response.body);
+        print('Get documents success: ${docs.length} documents found');
+        for (var doc in docs) {
+          print('Document: type=${doc['document_type']}, file_url=${doc['file_url']}');
+        }
+        return docs;
+      } else {
+        print('Get documents failed: ${response.statusCode} - ${response.body}');
       }
       return null;
     } catch (e) {
@@ -134,11 +148,29 @@ class VendorService {
       final response = await http.get(
         Uri.parse('${ApiConstants.baseUrl}${ApiConstants.vendorQrCode}'),
         headers: {'Authorization': 'Bearer $token'},
+      ).timeout(
+        const Duration(seconds: 20),
+        onTimeout: () {
+          print('QR code request timeout after 20 seconds');
+          throw Exception('QR code request timeout');
+        },
       );
+      
+      print('QR code response status: ${response.statusCode}');
+      print('QR code response body: ${response.body}');
+      
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        final data = json.decode(response.body);
+        if (data['qr_code_image_url'] != null && data['qr_code_image_url'].toString().isNotEmpty) {
+          return data;
+        } else {
+          print('QR code URL is empty in response');
+          return null;
+        }
+      } else {
+        print('QR code request failed: ${response.statusCode} - ${response.body}');
+        return null;
       }
-      return null;
     } catch (e) {
       print('Get QR code error: $e');
       return null;

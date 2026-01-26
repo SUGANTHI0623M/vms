@@ -12,3 +12,5 @@ python-dotenv
 email-validator
 gunicorn
 cloudinary
+qrcode[pil]
+Pillow

@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, noload
 from app.models.document import Document
 
 def create_document(db: Session, vendor_id: int, document_type: str, file_url: str):
@@ -24,4 +24,16 @@ def create_document(db: Session, vendor_id: int, document_type: str, file_url: s
     return db_document
 
 def get_profile_documents(db: Session, vendor_id: int):
-    return db.query(Document).filter(Document.vendor_id == vendor_id).all()
+    # Query documents without loading relationships to avoid lazy loading issues
+    # Use noload to prevent accessing the vendor relationship
+    try:
+        documents = db.query(Document).options(noload(Document.vendor)).filter(
+            Document.vendor_id == vendor_id
+        ).all()
+        return documents
+    except Exception as e:
+        print(f"ERROR in get_profile_documents: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        # Fallback: query without noload if there's an issue
+        return db.query(Document).filter(Document.vendor_id == vendor_id).all()

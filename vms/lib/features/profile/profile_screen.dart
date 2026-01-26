@@ -18,6 +18,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<dynamic> _documents = [];
   int _selectedTabIndex = 1; // 0: Company Details, 1: Documents
   bool _isUploading = false;
+  String? _qrCodeError;
 
   final List<String> _mandatoryDocTypes = [
     'LOGO',
@@ -47,20 +48,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (mounted) {
         final profile = results[0] as Map<String, dynamic>?;
-        final isVerified = profile?['verification_status'] == 'VERIFIED';
+        // Check verification status (case-insensitive)
+        final verificationStatus = profile?['verification_status']?.toString().toUpperCase();
+        final isVerified = verificationStatus == 'VERIFIED';
         
-        // Fetch QR code if verified
+        print('Fetching data - isVerified: $isVerified, verification_status: ${profile?['verification_status']}');
+        
+        // Always fetch QR code if verified (even if profile already has one, refresh it)
         if (isVerified && profile != null) {
-          final qrCodeData = await service.getQrCode();
-          if (qrCodeData != null && mounted) {
-            profile['qr_code_image_url'] = qrCodeData['qr_code_image_url'];
-            profile['qr_code_data'] = qrCodeData['qr_code_data'];
+          print('User is verified, fetching QR code...');
+          try {
+            final qrCodeData = await service.getQrCode().timeout(
+              const Duration(seconds: 25),
+              onTimeout: () {
+                print('QR code fetch timeout after 25 seconds');
+                return null;
+              },
+            );
+            if (qrCodeData != null && mounted) {
+              final qrUrl = qrCodeData['qr_code_image_url'];
+              if (qrUrl != null && qrUrl.toString().isNotEmpty) {
+                profile['qr_code_image_url'] = qrUrl;
+                profile['qr_code_data'] = qrCodeData['qr_code_data'];
+                _qrCodeError = null; // Clear any previous error
+                print('QR code loaded successfully: $qrUrl');
+              } else {
+                print('QR code URL is empty in response');
+                if (mounted) {
+                  _qrCodeError = 'QR code generation in progress. Please refresh.';
+                }
+              }
+            } else {
+              print('QR code data is null or empty');
+              if (mounted) {
+                _qrCodeError = 'QR code generation failed. Please try again later.';
+              }
+            }
+          } catch (e) {
+            print('Error fetching QR code: $e');
+            if (mounted) {
+              _qrCodeError = 'Unable to load QR code: ${e.toString()}';
+            }
           }
+        } else if (profile != null) {
+          print('User is not verified (status: ${profile['verification_status']}), skipping QR code');
         }
         
         setState(() {
           _vendorProfile = profile;
-          _documents = results[1] as List<dynamic>? ?? [];
+          final docs = results[1] as List<dynamic>? ?? [];
+          _documents = docs;
+          print('Profile screen: Loaded ${docs.length} documents');
+          for (var doc in docs) {
+            print('Document loaded: type=${doc['document_type']}, file_url=${doc['file_url']}');
+          }
           _isLoading = false;
         });
       }
@@ -71,11 +112,66 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Map<String, dynamic>? _getDocByType(String type) {
     try {
-      return _documents.firstWhere(
-        (d) => (d['document_type'] ?? '').toString().toUpperCase() == type.toUpperCase(),
-        orElse: () => null,
-      );
-    } catch (_) {
+      print('Looking for document type: $type');
+      print('Available documents count: ${_documents.length}');
+      
+      // Log all document types for debugging
+      for (var doc in _documents) {
+        final docType = (doc['document_type'] ?? '').toString();
+        print('  - Document type in DB: "$docType" (looking for "$type")');
+      }
+      
+      // Normalize the search type (handle PAN_CARD -> PAN, AADHAR_CARD -> AADHAR)
+      final normalizedType = type.toUpperCase().trim();
+      
+      // Create search variants - try both full name and short name
+      final searchVariants = <String>[
+        normalizedType, // Try exact match first (PAN_CARD, AADHAR_CARD)
+      ];
+      
+      // Add variants without _CARD suffix
+      if (normalizedType.endsWith('_CARD')) {
+        searchVariants.add(normalizedType.replaceAll('_CARD', '')); // PAN, AADHAR
+      }
+      
+      // Add variant without CARD at all
+      if (normalizedType.contains('CARD')) {
+        final withoutCard = normalizedType.replaceAll('CARD', '').replaceAll('_', '').trim();
+        if (withoutCard.isNotEmpty) {
+          searchVariants.add(withoutCard); // PAN, AADHAR
+        }
+      }
+      
+      print('Search variants for "$type": $searchVariants');
+      
+      // Try to find matching document - handle both exact match and case-insensitive
+      for (var doc in _documents) {
+        final docType = (doc['document_type'] ?? '').toString().toUpperCase().trim();
+        
+        // Check against all search variants
+        for (var searchVariant in searchVariants) {
+          if (docType == searchVariant) {
+            print('Found exact matching document: ${doc['document_type']} (matched variant: $searchVariant)');
+            return doc;
+          }
+        }
+        
+        // Also try partial matching (e.g., "PAN" matches "PAN_CARD" and vice versa)
+        if (docType.contains(normalizedType) || normalizedType.contains(docType)) {
+          // But only if one is a substring of the other and they're related
+          if ((docType.contains('PAN') && normalizedType.contains('PAN')) ||
+              (docType.contains('AADHAR') && normalizedType.contains('AADHAR'))) {
+            print('Found partial matching document: ${doc['document_type']} (matched: $docType contains or is contained in $normalizedType)');
+            return doc;
+          }
+        }
+      }
+      
+      print('No document found for type: $type');
+      return null;
+    } catch (e) {
+      print('Error getting doc by type $type: $e');
+      print('Available documents: $_documents');
       return null;
     }
   }
@@ -90,7 +186,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final name = _vendorProfile?['full_name'] ?? 'Test User 5';
     final companyName = _vendorProfile?['company_name'] ?? 'Test User 5 Co';
     final industry = _vendorProfile?['industry'] ?? 'Food Business';
-    final isVerified = _vendorProfile?['verification_status'] == 'VERIFIED';
+    // Check verification status (case-insensitive)
+    final verificationStatus = _vendorProfile?['verification_status']?.toString().toUpperCase();
+    final isVerified = verificationStatus == 'VERIFIED';
+    
+    print('Profile Screen - isVerified: $isVerified, verification_status: ${_vendorProfile?['verification_status']}');
     
     // Personal Details
     final email = _vendorProfile?['email'] ?? 'test5@gmail.com';
@@ -353,8 +453,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _buildDetailRow('State', _vendorProfile?['state'] ?? 'Not Provided', isDark),
                     _buildDetailRow('Pincode', _vendorProfile?['pincode'] ?? 'Not Provided', isDark),
                     const SizedBox(height: 24),
-                    // QR Code Section
-                    if (isVerified) _buildQrCodeSection(isDark, primaryColor),
+                    // QR Code Section - Always show if verified
+                    if (isVerified) 
+                      _buildQrCodeSection(isDark, primaryColor)
+                    else
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'QR Code will be available after verification',
+                          style: TextStyle(
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -447,8 +560,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
             TextButton(
               onPressed: () async {
                  final url = doc['file_url'] ?? doc['url'];
-                 if (url != null) {
-                   await launchUrl(Uri.parse(url));
+                 if (url != null && url.isNotEmpty) {
+                   try {
+                     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                   } catch (e) {
+                     if (mounted) {
+                       ScaffoldMessenger.of(context).showSnackBar(
+                         SnackBar(content: Text('Error opening document: $e')),
+                       );
+                     }
+                   }
+                 } else {
+                   if (mounted) {
+                     ScaffoldMessenger.of(context).showSnackBar(
+                       const SnackBar(content: Text('Document URL not available')),
+                     );
+                   }
                  }
               },
               child: Text('VIEW', style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
@@ -654,11 +781,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildQrCodeSection(bool isDark, Color primaryColor) {
     final qrCodeUrl = _vendorProfile?['qr_code_image_url'];
-    final isVerified = _vendorProfile?['verification_status'] == 'VERIFIED';
     
-    if (!isVerified) {
-      return const SizedBox.shrink();
-    }
+    // Check if QR code URL exists and is not empty
+    final hasQrCode = qrCodeUrl != null && qrCodeUrl.toString().isNotEmpty && qrCodeUrl.toString().trim().isNotEmpty;
+    
+    print('QR Code Section - qrCodeUrl: $qrCodeUrl, hasQrCode: $hasQrCode, _qrCodeError: $_qrCodeError');
     
     return Container(
       padding: const EdgeInsets.all(20),
@@ -686,7 +813,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          if (qrCodeUrl != null && qrCodeUrl.isNotEmpty)
+          if (hasQrCode)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -695,31 +822,126 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 border: Border.all(color: primaryColor.withOpacity(0.3)),
               ),
               child: Image.network(
-                qrCodeUrl,
+                qrCodeUrl.toString(),
                 width: 250,
                 height: 250,
                 fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
                   return Container(
                     width: 250,
                     height: 250,
+                    color: Colors.grey[100],
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                            : null,
+                      ),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  print('QR code image load error: $error');
+                  return Container(
+                    width: 250,
+                    height: 250,
+                    padding: const EdgeInsets.all(20),
                     color: Colors.grey[300],
-                    child: const Icon(Icons.error, size: 50),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline, size: 50, color: Colors.red),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Failed to load QR code',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ],
+                    ),
                   );
                 },
               ),
             )
-          else
+          else if (_qrCodeError != null)
             Container(
               padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red.withOpacity(0.3)),
+              ),
+              child: Column(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                  const SizedBox(height: 12),
+                  Text(
+                    'QR Code Error',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _qrCodeError!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _qrCodeError = null;
+                      });
+                      _fetchData();
+                    },
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Retry'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            // Show loading state while QR code is being generated
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF27272A) : Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: primaryColor.withOpacity(0.3)),
+              ),
               child: Column(
                 children: [
                   const CircularProgressIndicator(),
                   const SizedBox(height: 16),
                   Text(
                     'Generating QR Code...',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      color: isDark ? Colors.white : Colors.black87,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'This may take a few moments',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.grey[500] : Colors.grey[500],
                     ),
                   ),
                 ],

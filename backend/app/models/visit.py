@@ -18,10 +18,15 @@ class Visit(Base):
     check_out_latitude = Column(Float, nullable=True)
     check_out_longitude = Column(Float, nullable=True)
     
+    # Address components
     area = Column(String, nullable=True)
     pincode = Column(String, nullable=True)
     city = Column(String, nullable=True)
     state = Column(String, nullable=True)
+    
+    # Full Address stored as requested
+    check_in_location = Column(Text, nullable=True)
+    check_out_location = Column(Text, nullable=True)
     
     check_in_selfie_url = Column(String)
     check_out_selfie_url = Column(String, nullable=True)

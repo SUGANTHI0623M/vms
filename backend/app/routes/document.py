@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from app.core import database
-from app.dependencies.auth import get_current_user
+from app.dependencies import auth
 from app.services import document_service, vendor_service
 from app.schemas.document import DocumentResponse
 from app.models.user import User
@@ -13,7 +13,7 @@ router = APIRouter()
 async def upload_document(
     document_type: str = Form(...),
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(auth.get_current_active_user),
     db: Session = Depends(database.get_db)
 ):
     print(f"DEBUG: Processing upload. Type: {document_type}, File: {file.filename}, User: {current_user.id}")
@@ -46,10 +46,29 @@ async def upload_document(
 
 @router.get("/", response_model=List[DocumentResponse])
 def read_documents(
-    current_user: User = Depends(get_current_user), 
+    current_user: User = Depends(auth.get_current_active_user), 
     db: Session = Depends(database.get_db)
 ):
-    vendor = vendor_service.get_vendor_by_user_id(db, current_user.id)
-    if not vendor:
-        raise HTTPException(status_code=400, detail="Vendor Profile required")
-    return document_service.get_profile_documents(db, vendor.id)
+    try:
+        vendor = vendor_service.get_vendor_by_user_id(db, current_user.id)
+        if not vendor:
+            print(f"DEBUG: Vendor not found for user {current_user.id}")
+            raise HTTPException(status_code=400, detail="Vendor Profile required")
+        
+        documents = document_service.get_profile_documents(db, vendor.id)
+        print(f"DEBUG: Found {len(documents)} documents for vendor {vendor.id}")
+        
+        # Log each document
+        for doc in documents:
+            print(f"DEBUG: Document {doc.id}: type={doc.document_type}, url={doc.file_url}, uploaded_at={doc.uploaded_at}")
+        
+        # Return documents directly - FastAPI will serialize using DocumentResponse
+        # Make sure we're not accessing any relationships
+        return documents
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR in read_documents: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

@@ -32,7 +32,13 @@ class AuthService extends ChangeNotifier {
 
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('token', _token!);
+        
+        // Clear any cached profile data when logging in as a different user
+        await prefs.remove('cached_vendor_profile');
+        await prefs.remove('cached_documents');
 
+        print('Login successful for: $email');
+        print('Token stored, cached data cleared');
         notifyListeners();
         return true;
       }

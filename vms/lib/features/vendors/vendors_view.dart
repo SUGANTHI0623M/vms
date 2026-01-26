@@ -4,7 +4,6 @@ import '../../services/auth_service.dart';
 import '../../services/vendor_service.dart';
 import '../../services/visit_service.dart';
 import '../../core/models/vendor.dart';
-import '../../core/theme/app_colors.dart';
 import 'vendor_detail_view.dart';
 
 class VendorsView extends StatefulWidget {
@@ -17,7 +16,6 @@ class VendorsView extends StatefulWidget {
 class _VendorsViewState extends State<VendorsView> {
   Map<String, dynamic>? _currentVendorProfile;
   List<Vendor> _allVendors = [];
-  List<Vendor> _filteredVendors = [];
   final Set<String> _visitedCompanyNames = {};
   final Set<int> _visitorVendorIds = {};
   bool _isLoading = true;
@@ -70,9 +68,18 @@ class _VendorsViewState extends State<VendorsView> {
 
           setState(() {
             _allVendors = data?.map((e) => Vendor.fromJson(e)).toList() ?? [];
-            _filteredVendors = _allVendors;
             _isLoading = false;
           });
+          
+          // Debug: Log vendor verification statuses
+          print('DEBUG: Loaded ${_allVendors.length} vendors');
+          for (var vendor in _allVendors) {
+            print('DEBUG: Vendor ${vendor.id} (${vendor.companyName}): verification_status = "${vendor.verificationStatus}"');
+          }
+          
+          // Debug: Count verified vendors
+          final verifiedCount = _allVendors.where((v) => v.verificationStatus.toUpperCase() == 'VERIFIED').length;
+          print('DEBUG: Found $verifiedCount verified vendors out of ${_allVendors.length} total');
         }
       } catch (e) {
         debugPrint('Error fetching vendors data: $e');

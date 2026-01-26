@@ -128,7 +128,8 @@ class AppDrawer extends StatelessWidget {
                     );
                   },
                 ),
-                if (vendorProfile?['verification_status'] != 'VERIFIED')
+                // Only show "Get Verified" if user is NOT verified
+                if (vendorProfile?['verification_status']?.toString().toUpperCase() != 'VERIFIED')
                   ListTile(
                     leading: Icon(Icons.verified_user, color: isDark ? Colors.white : Colors.black87),
                     title: Text('Get Verified', style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontWeight: FontWeight.w600)),
